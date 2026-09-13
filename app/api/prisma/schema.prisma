@@ -1,0 +1,743 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  CANDIDATE
+  EMPLOYER
+  ADMIN
+  MODERATOR
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  DELETED
+}
+
+enum EmploymentType {
+  SHIFT
+  PERMANENT
+  PROJECT
+  PART_TIME
+  TEMPORARY
+}
+
+enum VacancyStatus {
+  DRAFT
+  PENDING_MODERATION
+  MODERATION
+  PUBLISHED
+  PAUSED
+  CLOSED
+  REJECTED
+  ARCHIVED
+}
+
+enum VerificationStatus {
+  NOT_VERIFIED
+  PENDING
+  VERIFIED
+  REQUIRES_ATTENTION
+  REJECTED
+}
+
+enum ApplicationStatus {
+  NEW
+  VIEWED
+  IN_REVIEW
+  INTERVIEW
+  OFFER
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+enum DocumentType {
+  RESUME
+  CERTIFICATE
+  LICENSE
+  ID_CARD
+  DIPLOMA
+  OTHER
+}
+
+enum NotificationType {
+  NEW_APPLICATION
+  APPLICATION_STATUS_CHANGED
+  VACANCY_PUBLISHED
+  VACANCY_REJECTED
+  EMPLOYER_VERIFIED
+  SYSTEM
+}
+
+enum NotificationChannel {
+  EMAIL
+  TELEGRAM
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum MembershipRole {
+  OWNER
+  HR
+  RECRUITER
+  MANAGER
+}
+
+enum RequirementType {
+  EXPERIENCE
+  EDUCATION
+  CERTIFICATE
+  LICENSE
+  SAFETY
+  SKILL
+  OTHER
+}
+
+// ============================================================
+// USER
+// ============================================================
+
+model User {
+  id String @id @default(uuid())
+
+  email String  @unique
+  phone String? @unique
+
+  passwordHash String
+
+  firstName  String?
+  lastName   String?
+  middleName String?
+
+  role   UserRole   @default(CANDIDATE)
+  status UserStatus @default(ACTIVE)
+
+  telegramId       String? @unique
+  telegramUsername String?
+
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+
+  lastLoginAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  sessions Session[]
+
+  candidateProfile CandidateProfile?
+
+  employerMemberships EmployerMember[]
+
+  applications Application[] @relation("CandidateApplications")
+
+  notifications Notification[]
+
+  notificationPreferences NotificationPreference[]
+
+  subscriptions Subscription[]
+
+  auditLogs AuditLog[] @relation("AuditActor")
+
+  resumes Resume[]
+
+  documents CandidateDocument[]
+
+  favorites FavoriteVacancy[]
+
+  vacanciesCreated Vacancy[] @relation("VacancyCreatedBy")
+
+  vacanciesUpdated Vacancy[] @relation("VacancyUpdatedBy")
+
+  @@index([role])
+  @@index([status])
+  @@index([createdAt])
+  @@map("users")
+}
+
+// ============================================================
+// SESSION
+// ============================================================
+
+model Session {
+  id String @id @default(uuid())
+
+  userId String
+
+  refreshTokenHash String
+
+  userAgent String?
+  ipAddress String?
+
+  expiresAt  DateTime
+  lastUsedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================================
+// CANDIDATE PROFILE
+// ============================================================
+
+model CandidateProfile {
+  id String @id @default(uuid())
+
+  userId String @unique
+
+  birthDate DateTime?
+
+  citizenship String?
+
+  city   String?
+  region String?
+
+  desiredPosition String?
+
+  desiredSalaryMin Int?
+  desiredSalaryMax Int?
+
+  readyForShift Boolean @default(false)
+
+  shiftSchedule String?
+
+  about String?
+
+  experienceYears Int?
+
+  education String?
+
+  isPublic Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  resumes Resume[]
+
+  documents CandidateDocument[]
+
+  @@index([city])
+  @@index([region])
+  @@index([desiredPosition])
+  @@index([readyForShift])
+  @@map("candidate_profiles")
+}
+
+// ============================================================
+// EMPLOYER
+// ============================================================
+
+model Employer {
+  id String @id @default(uuid())
+
+  inn String @unique
+
+  legalName String
+  shortName String?
+
+  ogrn String?
+  kpp  String?
+
+  legalAddress String?
+
+  website String?
+
+  description String?
+
+  logoStorageKey String?
+
+  verificationStatus VerificationStatus @default(NOT_VERIFIED)
+
+  verifiedAt   DateTime?
+  verifiedById String?
+
+  dadataData Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members EmployerMember[]
+
+  vacancies Vacancy[]
+
+  verifications EmployerVerification[]
+
+  @@index([legalName])
+  @@index([shortName])
+  @@index([verificationStatus])
+  @@map("employers")
+}
+
+// ============================================================
+// EMPLOYER MEMBERS
+// ============================================================
+
+model EmployerMember {
+  id String @id @default(uuid())
+
+  employerId String
+  userId     String
+
+  role MembershipRole @default(HR)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employer Employer @relation(fields: [employerId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([employerId, userId])
+  @@index([employerId])
+  @@index([userId])
+  @@map("employer_members")
+}
+
+// ============================================================
+// EMPLOYER VERIFICATION
+// ============================================================
+
+model EmployerVerification {
+  id String @id @default(uuid())
+
+  employerId String
+
+  status VerificationStatus
+
+  method String?
+
+  comment String?
+
+  verifiedById String?
+
+  verifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  employer Employer @relation(fields: [employerId], references: [id], onDelete: Cascade)
+
+  @@index([employerId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("employer_verifications")
+}
+
+// ============================================================
+// VACANCY
+// ============================================================
+
+model Vacancy {
+  id String @id @default(uuid())
+
+  employerId String
+
+  createdById String
+  updatedById String?
+
+  title String
+
+  slug String @unique
+
+  description String
+
+  responsibilities String?
+
+  requirementsText String?
+
+  conditions String?
+
+  salaryMin Int?
+  salaryMax Int?
+
+  currency String @default("RUB")
+
+  employmentType EmploymentType
+
+  locationRegion String
+  locationCity   String?
+
+  schedule String?
+
+  housingProvided  Boolean @default(false)
+  flightProvided   Boolean @default(false)
+  medicalInsurance Boolean @default(false)
+
+  status VacancyStatus @default(DRAFT)
+
+  moderationComment String?
+
+  publishedAt DateTime?
+  expiresAt   DateTime?
+
+  viewsCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employer Employer @relation(fields: [employerId], references: [id], onDelete: Cascade)
+
+  createdBy User @relation("VacancyCreatedBy", fields: [createdById], references: [id])
+
+  updatedBy User? @relation("VacancyUpdatedBy", fields: [updatedById], references: [id])
+
+  requirements VacancyRequirement[]
+
+  applications Application[]
+
+  favorites FavoriteVacancy[]
+
+  @@index([employerId])
+  @@index([status])
+  @@index([locationRegion])
+  @@index([locationCity])
+  @@index([employmentType])
+  @@index([salaryMin])
+  @@index([salaryMax])
+  @@index([publishedAt])
+  @@index([createdAt])
+  @@map("vacancies")
+}
+
+// ============================================================
+// VACANCY REQUIREMENTS
+// ============================================================
+
+model VacancyRequirement {
+  id String @id @default(uuid())
+
+  vacancyId String
+
+  type RequirementType
+
+  name String
+
+  description String?
+
+  required Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+
+  @@index([vacancyId])
+  @@index([type])
+  @@index([required])
+  @@map("vacancy_requirements")
+}
+
+// ============================================================
+// APPLICATION
+// ============================================================
+
+model Application {
+  id String @id @default(uuid())
+
+  vacancyId   String
+  candidateId String
+
+  resumeId String?
+
+  status ApplicationStatus @default(NEW)
+
+  coverLetter String?
+
+  recruiterComment String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+
+  candidate User @relation("CandidateApplications", fields: [candidateId], references: [id], onDelete: Cascade)
+
+  resume Resume? @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+
+  statusHistory ApplicationStatusHistory[]
+
+  @@unique([vacancyId, candidateId])
+  @@index([vacancyId])
+  @@index([candidateId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("applications")
+}
+
+// ============================================================
+// APPLICATION STATUS HISTORY
+// ============================================================
+
+model ApplicationStatusHistory {
+  id String @id @default(uuid())
+
+  applicationId String
+
+  oldStatus ApplicationStatus?
+  newStatus ApplicationStatus
+
+  comment String?
+
+  changedById String?
+
+  createdAt DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([createdAt])
+  @@map("application_status_history")
+}
+
+// ============================================================
+// RESUME
+// ============================================================
+
+model Resume {
+  id String @id @default(uuid())
+
+  userId String
+
+  candidateProfileId String
+
+  title String
+
+  storageKey String
+
+  originalName String
+
+  mimeType String
+
+  sizeBytes Int
+
+  isPrimary Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  candidateProfile CandidateProfile @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+
+  applications Application[]
+
+  @@index([userId])
+  @@index([candidateProfileId])
+  @@index([isPrimary])
+  @@map("resumes")
+}
+
+// ============================================================
+// CANDIDATE DOCUMENT
+// ============================================================
+
+model CandidateDocument {
+  id String @id @default(uuid())
+
+  userId String
+
+  candidateProfileId String
+
+  type DocumentType
+
+  title String
+
+  storageKey String
+
+  originalName String
+
+  mimeType String
+
+  sizeBytes Int
+
+  issuedAt DateTime?
+
+  expiresAt DateTime?
+
+  verificationStatus VerificationStatus @default(NOT_VERIFIED)
+
+  verificationComment String?
+
+  verifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  candidateProfile CandidateProfile @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([candidateProfileId])
+  @@index([type])
+  @@index([verificationStatus])
+  @@index([expiresAt])
+  @@map("candidate_documents")
+}
+
+// ============================================================
+// FAVORITE VACANCIES
+// ============================================================
+
+model FavoriteVacancy {
+  id String @id @default(uuid())
+
+  userId    String
+  vacancyId String
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, vacancyId])
+  @@index([userId])
+  @@index([vacancyId])
+  @@map("favorite_vacancies")
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id String @id @default(uuid())
+
+  userId String
+
+  type NotificationType
+
+  channel NotificationChannel
+
+  status NotificationStatus @default(PENDING)
+
+  title String
+
+  message String
+
+  data Json?
+
+  sentAt DateTime?
+
+  error String?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================================
+// NOTIFICATION PREFERENCES
+// ============================================================
+
+model NotificationPreference {
+  id String @id @default(uuid())
+
+  userId String
+
+  type NotificationType
+
+  channel NotificationChannel
+
+  enabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, channel])
+  @@index([userId])
+  @@map("notification_preferences")
+}
+
+// ============================================================
+// SUBSCRIPTIONS
+// ============================================================
+
+model Subscription {
+  id String @id @default(uuid())
+
+  userId String
+
+  name String?
+
+  filters Json
+
+  enabled Boolean @default(true)
+
+  lastSentAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([enabled])
+  @@map("subscriptions")
+}
+
+// ============================================================
+// AUDIT LOG
+// ============================================================
+
+model AuditLog {
+  id String @id @default(uuid())
+
+  actorId String?
+
+  action String
+
+  entityType String
+
+  entityId String?
+
+  oldData Json?
+
+  newData Json?
+
+  ipAddress String?
+
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

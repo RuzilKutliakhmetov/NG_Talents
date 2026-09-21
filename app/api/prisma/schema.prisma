@@ -32,6 +32,20 @@ enum EmploymentType {
   TEMPORARY
 }
 
+enum WorkFormat {
+  ONSITE
+  HYBRID
+  REMOTE
+}
+
+enum VacancyRegion {
+  BASHKORTOSTAN
+  KHMAO
+  YANAO
+  TATARSTAN
+  OTHER
+}
+
 enum VacancyStatus {
   DRAFT
   PENDING_MODERATION
@@ -41,6 +55,13 @@ enum VacancyStatus {
   CLOSED
   REJECTED
   ARCHIVED
+}
+
+enum VacancyModerationAction {
+  START_MODERATION
+  APPROVE
+  REJECT
+  RESUBMIT
 }
 
 enum VerificationStatus {
@@ -99,6 +120,35 @@ enum MembershipRole {
   MANAGER
 }
 
+enum EmployerMemberRole {
+  OWNER
+  ADMIN
+  HR
+  RECRUITER
+}
+
+enum CandidateCertificationType {
+  A1
+  B1_1
+  ELECTRICAL_SAFETY
+  NAKS
+  OTHER
+}
+
+enum EmployerVerificationStatus {
+  NOT_VERIFIED
+  PENDING
+  VERIFIED
+  REQUIRES_ATTENTION
+  REJECTED
+}
+
+enum EmployerVerificationMethod {
+  MANUAL
+  DADATA
+  MIXED
+}
+
 enum RequirementType {
   EXPERIENCE
   EDUCATION
@@ -148,6 +198,8 @@ model User {
 
   applications Application[] @relation("CandidateApplications")
 
+  applicationStatusHistory ApplicationStatusHistory[] @relation("ApplicationStatusHistoryActor")
+
   notifications Notification[]
 
   notificationPreferences NotificationPreference[]
@@ -165,6 +217,10 @@ model User {
   vacanciesCreated Vacancy[] @relation("VacancyCreatedBy")
 
   vacanciesUpdated Vacancy[] @relation("VacancyUpdatedBy")
+
+  vacancyModerationAudits VacancyModerationAudit[] @relation("VacancyModerationAuditActor")
+
+  employerVerificationsVerified EmployerVerification[] @relation("VerificationVerifiedBy")
 
   @@index([role])
   @@index([status])
@@ -220,7 +276,8 @@ model CandidateProfile {
   desiredSalaryMin Int?
   desiredSalaryMax Int?
 
-  readyForShift Boolean @default(false)
+  readyForShift     Boolean @default(false)
+  readyForShiftWork Boolean @default(false)
 
   shiftSchedule String?
 
@@ -240,6 +297,10 @@ model CandidateProfile {
   resumes Resume[]
 
   documents CandidateDocument[]
+
+  experiences    CandidateExperience[]
+  educations     CandidateEducation[]
+  certifications CandidateCertification[]
 
   @@index([city])
   @@index([region])
@@ -264,6 +325,10 @@ model Employer {
   kpp  String?
 
   legalAddress String?
+
+  email   String?
+  phone   String?
+  address String?
 
   website String?
 
@@ -303,7 +368,8 @@ model EmployerMember {
   employerId String
   userId     String
 
-  role MembershipRole @default(HR)
+  role       MembershipRole     @default(HR)
+  memberRole EmployerMemberRole @default(HR)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -329,7 +395,11 @@ model EmployerVerification {
 
   status VerificationStatus
 
+  verificationStatus EmployerVerificationStatus @default(PENDING)
+
   method String?
+
+  verificationMethod EmployerVerificationMethod @default(MANUAL)
 
   comment String?
 
@@ -339,12 +409,66 @@ model EmployerVerification {
 
   createdAt DateTime @default(now())
 
-  employer Employer @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  employer   Employer @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  verifiedBy User?    @relation("VerificationVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
 
   @@index([employerId])
   @@index([status])
   @@index([createdAt])
   @@map("employer_verifications")
+}
+
+model CandidateExperience {
+  id                 String           @id @default(uuid())
+  candidateProfileId String
+  companyName        String
+  position           String
+  startDate          DateTime
+  endDate            DateTime?
+  isCurrent          Boolean          @default(false)
+  description        String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  candidateProfile   CandidateProfile @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+
+  @@index([candidateProfileId])
+  @@map("candidate_experiences")
+}
+
+model CandidateEducation {
+  id                 String           @id @default(uuid())
+  candidateProfileId String
+  institution        String
+  specialization     String
+  degree             String?
+  startYear          Int?
+  endYear            Int?
+  description        String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  candidateProfile   CandidateProfile @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+
+  @@index([candidateProfileId])
+  @@map("candidate_educations")
+}
+
+model CandidateCertification {
+  id                 String                     @id @default(uuid())
+  candidateProfileId String
+  type               CandidateCertificationType
+  name               String
+  number             String?
+  issuedAt           DateTime?
+  expiresAt          DateTime?
+  issuer             String?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  candidateProfile   CandidateProfile           @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+
+  @@index([candidateProfileId])
+  @@index([type])
+  @@index([expiresAt])
+  @@map("candidate_certifications")
 }
 
 // ============================================================
@@ -361,7 +485,7 @@ model Vacancy {
 
   title String
 
-  slug String @unique
+  slug String? @unique
 
   description String
 
@@ -374,17 +498,21 @@ model Vacancy {
   salaryMin Int?
   salaryMax Int?
 
-  currency String @default("RUB")
+  currency    String   @default("RUB")
+  salaryGross Boolean?
 
   employmentType EmploymentType
+  workFormat     WorkFormat     @default(ONSITE)
 
-  locationRegion String
-  locationCity   String?
+  locationRegion  VacancyRegion
+  locationCity    String?
+  locationAddress String?
 
   schedule String?
 
   housingProvided  Boolean @default(false)
   flightProvided   Boolean @default(false)
+  travelProvided   Boolean @default(false)
   medicalInsurance Boolean @default(false)
 
   status VacancyStatus @default(DRAFT)
@@ -392,6 +520,7 @@ model Vacancy {
   moderationComment String?
 
   publishedAt DateTime?
+  closedAt    DateTime?
   expiresAt   DateTime?
 
   viewsCount Int @default(0)
@@ -405,7 +534,9 @@ model Vacancy {
 
   updatedBy User? @relation("VacancyUpdatedBy", fields: [updatedById], references: [id])
 
-  requirements VacancyRequirement[]
+  requirements     VacancyRequirement[]
+  certifications   VacancyCertification[]
+  moderationAudits VacancyModerationAudit[]
 
   applications Application[]
 
@@ -438,7 +569,8 @@ model VacancyRequirement {
 
   description String?
 
-  required Boolean @default(true)
+  required  Boolean @default(true)
+  sortOrder Int     @default(0)
 
   createdAt DateTime @default(now())
 
@@ -450,6 +582,45 @@ model VacancyRequirement {
   @@map("vacancy_requirements")
 }
 
+model VacancyCertification {
+  id String @id @default(uuid())
+
+  vacancyId String
+  type      CandidateCertificationType
+  name      String?
+  required  Boolean                    @default(true)
+
+  createdAt DateTime @default(now())
+
+  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+
+  @@index([vacancyId])
+  @@index([type])
+  @@map("vacancy_certifications")
+}
+
+model VacancyModerationAudit {
+  id String @id @default(cuid())
+
+  vacancyId String
+  vacancy   Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+
+  actorId   String
+  actor     User     @relation("VacancyModerationAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+  actorRole UserRole
+
+  action     VacancyModerationAction
+  fromStatus VacancyStatus?
+  toStatus   VacancyStatus?
+  comment    String?
+  createdAt  DateTime                @default(now())
+
+  @@index([vacancyId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@map("vacancy_moderation_audits")
+}
+
 // ============================================================
 // APPLICATION
 // ============================================================
@@ -457,58 +628,57 @@ model VacancyRequirement {
 model Application {
   id String @id @default(uuid())
 
-  vacancyId   String
+  vacancyId String
+  vacancy   Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Restrict)
+
   candidateId String
+  candidate   User   @relation("CandidateApplications", fields: [candidateId], references: [id], onDelete: Restrict)
 
   resumeId String?
+  resume   Resume? @relation(fields: [resumeId], references: [id], onDelete: SetNull)
 
   status ApplicationStatus @default(NEW)
 
   coverLetter String?
 
-  recruiterComment String?
+  candidateComment String?
+  employerComment  String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
-
-  candidate User @relation("CandidateApplications", fields: [candidateId], references: [id], onDelete: Cascade)
-
-  resume Resume? @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  appliedAt DateTime  @default(now())
+  viewedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   statusHistory ApplicationStatusHistory[]
 
   @@unique([vacancyId, candidateId])
-  @@index([vacancyId])
-  @@index([candidateId])
-  @@index([status])
-  @@index([createdAt])
+  @@index([candidateId, createdAt])
+  @@index([vacancyId, status])
+  @@index([status, appliedAt])
   @@map("applications")
 }
-
-// ============================================================
-// APPLICATION STATUS HISTORY
-// ============================================================
 
 model ApplicationStatusHistory {
   id String @id @default(uuid())
 
   applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  oldStatus ApplicationStatus?
-  newStatus ApplicationStatus
+  actorId String
+  actor   User   @relation("ApplicationStatusHistoryActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  actorRole UserRole
+
+  fromStatus ApplicationStatus?
+  toStatus   ApplicationStatus
 
   comment String?
 
-  changedById String?
-
   createdAt DateTime @default(now())
 
-  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-
-  @@index([applicationId])
-  @@index([createdAt])
+  @@index([applicationId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([toStatus, createdAt])
   @@map("application_status_history")
 }
 

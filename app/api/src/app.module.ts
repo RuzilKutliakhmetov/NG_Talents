@@ -14,6 +14,8 @@ import { VacancyModule } from './vacancy/vacancy.module.js';
 import { EmployerModule } from './employer/employer.module.js';
 import { ApplicationModule } from './application/application.module.js';
 import { ResumeModule } from './resume/resume.module.js';
+import { CandidateDocumentModule } from './candidate-document/candidate-document.module.js';
+import { StorageModule } from './storage/storage.module.js';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { ResumeModule } from './resume/resume.module.js';
     VacancyModule,
     ApplicationModule,
     ResumeModule,
+    CandidateDocumentModule,
+    StorageModule,
     HealthModule,
   ],
   controllers: [],

@@ -1,14 +1,12 @@
 import { Transform } from 'class-transformer';
 import {
-  IsIn,
-  IsInt,
+  IsBoolean,
   IsNotEmpty,
+  IsOptional,
   IsString,
-  Max,
   MaxLength,
-  Min,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export const RESUME_ALLOWED_MIME_TYPES = [
   'application/pdf',
@@ -28,32 +26,9 @@ export class CreateResumeDto {
   @MaxLength(200)
   title!: string;
 
-  @ApiProperty({ example: 'resume.pdf', maxLength: 255 })
-  @Transform(trim)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  originalName!: string;
-
-  @ApiProperty({ enum: RESUME_ALLOWED_MIME_TYPES })
-  @Transform(trim)
-  @IsString()
-  @IsIn([...RESUME_ALLOWED_MIME_TYPES])
-  mimeType!: string;
-
-  @ApiProperty({ example: 245760, minimum: 1, maximum: RESUME_MAX_SIZE_BYTES })
-  @IsInt()
-  @Min(1)
-  @Max(RESUME_MAX_SIZE_BYTES)
-  sizeBytes!: number;
-
-  @ApiProperty({
-    example: 'candidates/user-id/resumes/resume-id.pdf',
-    maxLength: 500,
-  })
-  @Transform(trim)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(500)
-  storageKey!: string;
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  isPrimary?: boolean;
 }

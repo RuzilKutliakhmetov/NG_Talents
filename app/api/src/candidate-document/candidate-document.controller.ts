@@ -22,53 +22,67 @@ import {
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { UserRole } from '../generated/prisma/client.js';
-import { CreateResumeDto } from './dto/create-resume.dto.js';
-import { UpdateResumeDto } from './dto/update-resume.dto.js';
-import { ResumeService } from './resume.service.js';
-import { RESUME_MAX_SIZE_BYTES } from './dto/create-resume.dto.js';
+import { CreateCandidateDocumentDto } from './dto/create-candidate-document.dto.js';
+import { UpdateCandidateDocumentDto } from './dto/update-candidate-document.dto.js';
+import { CandidateDocumentService } from './candidate-document.service.js';
+import { STORAGE_FILE_MAX_SIZE_BYTES } from '../storage/uploaded-file.js';
 import type { UploadedFileInput } from '../storage/uploaded-file.js';
 
-@ApiTags('Candidate resumes')
+@ApiTags('Candidate documents')
 @ApiBearerAuth()
-@Controller('candidate/resumes')
+@Controller('candidate/documents')
 @Roles(UserRole.CANDIDATE)
-export class ResumeController {
-  constructor(private readonly service: ResumeService) {}
+export class CandidateDocumentController {
+  constructor(private readonly service: CandidateDocumentService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List current candidate resumes' })
+  @ApiOperation({ summary: 'List current candidate documents' })
   list(@CurrentUser() user: { sub: string }) {
     return this.service.list(user.sub);
   }
 
   @Post()
-  @ApiOperation({ summary: 'Upload resume' })
+  @ApiOperation({ summary: 'Upload candidate document' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['file', 'title'],
+      required: ['file', 'type', 'title'],
       properties: {
         file: { type: 'string', format: 'binary' },
-        title: { type: 'string', maxLength: 200 },
-        isPrimary: { type: 'boolean' },
+        type: {
+          type: 'string',
+          enum: [
+            'RESUME',
+            'CERTIFICATE',
+            'LICENSE',
+            'ID_CARD',
+            'DIPLOMA',
+            'OTHER',
+          ],
+        },
+        title: { type: 'string', maxLength: 300 },
+        issuedAt: { type: 'string', format: 'date' },
+        expiresAt: { type: 'string', format: 'date' },
       },
     },
   })
   @ApiResponse({ status: 201 })
   @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: RESUME_MAX_SIZE_BYTES } }),
+    FileInterceptor('file', {
+      limits: { fileSize: STORAGE_FILE_MAX_SIZE_BYTES },
+    }),
   )
   create(
     @CurrentUser() user: { sub: string },
-    @Body() dto: CreateResumeDto,
+    @Body() dto: CreateCandidateDocumentDto,
     @UploadedFile() file: UploadedFileInput,
   ) {
     return this.service.create(user.sub, dto, file);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get current candidate resume' })
+  @ApiOperation({ summary: 'Get current candidate document' })
   get(
     @CurrentUser() user: { sub: string },
     @Param('id', ParseUUIDPipe) id: string,
@@ -77,7 +91,9 @@ export class ResumeController {
   }
 
   @Get(':id/download')
-  @ApiOperation({ summary: 'Generate a short-lived download URL for a resume' })
+  @ApiOperation({
+    summary: 'Generate a short-lived download URL for a candidate document',
+  })
   @ApiResponse({ status: 200 })
   download(
     @CurrentUser() user: { sub: string },
@@ -87,30 +103,21 @@ export class ResumeController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update resume metadata' })
+  @ApiOperation({ summary: 'Update candidate document metadata' })
   update(
     @CurrentUser() user: { sub: string },
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateResumeDto,
+    @Body() dto: UpdateCandidateDocumentDto,
   ) {
     return this.service.update(user.sub, id, dto);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete resume metadata' })
+  @ApiOperation({ summary: 'Delete candidate document metadata' })
   remove(
     @CurrentUser() user: { sub: string },
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.service.remove(user.sub, id);
-  }
-
-  @Post(':id/primary')
-  @ApiOperation({ summary: 'Set resume as primary' })
-  setPrimary(
-    @CurrentUser() user: { sub: string },
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
-    return this.service.setPrimary(user.sub, id);
   }
 }

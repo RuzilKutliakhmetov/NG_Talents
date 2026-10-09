@@ -5,10 +5,19 @@ import { ResumeService } from './resume.service.js';
 
 const dto: CreateResumeDto = {
   title: '  Resume  ',
-  originalName: ' resume.pdf ',
-  mimeType: 'application/pdf',
-  sizeBytes: 1000,
-  storageKey: ' candidates/user-1/resume.pdf ',
+};
+const file = {
+  buffer: Buffer.from('pdf'),
+  originalname: ' resume.pdf ',
+  mimetype: 'application/pdf',
+};
+const storageMock = {
+  putObject: vi.fn().mockResolvedValue(undefined),
+  deleteObject: vi.fn().mockResolvedValue(undefined),
+  exists: vi.fn().mockResolvedValue(true),
+  createDownloadUrl: vi
+    .fn()
+    .mockResolvedValue('https://signed.example/download'),
 };
 
 function profileMock() {
@@ -32,26 +41,30 @@ function resumeMock(overrides: Record<string, unknown> = {}) {
 
 describe('ResumeService', () => {
   it('creates metadata using the current user profile', async () => {
+    const tx = { resume: { create: vi.fn().mockResolvedValue(resumeMock()) } };
     const prisma = {
       candidateProfile: {
         findUnique: vi.fn().mockResolvedValue(profileMock()),
       },
       resume: { create: vi.fn().mockResolvedValue(resumeMock()) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+      ),
     };
-    const service = new ResumeService(prisma as never);
+    const service = new ResumeService(prisma as never, storageMock as never);
 
-    await service.create('user-1', dto);
+    await service.create('user-1', dto, file);
 
-    expect(prisma.resume.create).toHaveBeenCalledWith({
-      data: {
+    expect(tx.resume.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
         userId: 'user-1',
         candidateProfileId: 'profile-1',
         title: 'Resume',
         originalName: 'resume.pdf',
         mimeType: 'application/pdf',
-        sizeBytes: 1000,
-        storageKey: 'candidates/user-1/resume.pdf',
-      },
+        sizeBytes: 3,
+      }),
+      select: expect.any(Object),
     });
   });
 
@@ -62,7 +75,7 @@ describe('ResumeService', () => {
       },
       resume: { findMany: vi.fn().mockResolvedValue([resumeMock()]) },
     };
-    const service = new ResumeService(prisma as never);
+    const service = new ResumeService(prisma as never, storageMock as never);
 
     await service.list('user-1');
 
@@ -76,7 +89,7 @@ describe('ResumeService', () => {
     const prisma = {
       resume: { findFirst: vi.fn().mockResolvedValue(null) },
     };
-    const service = new ResumeService(prisma as never);
+    const service = new ResumeService(prisma as never, storageMock as never);
 
     await expect(service.get('user-1', 'resume-2')).rejects.toBeInstanceOf(
       NotFoundException,
@@ -87,6 +100,12 @@ describe('ResumeService', () => {
         userId: 'user-1',
         candidateProfile: { userId: 'user-1' },
       },
+      select: expect.objectContaining({
+        id: true,
+        storageKey: true,
+        userId: true,
+        candidateProfileId: true,
+      }),
     });
   });
 
@@ -97,7 +116,7 @@ describe('ResumeService', () => {
         update: vi.fn().mockResolvedValue(resumeMock({ title: 'Updated' })),
       },
     };
-    const service = new ResumeService(prisma as never);
+    const service = new ResumeService(prisma as never, storageMock as never);
 
     await service.update('user-1', 'resume-1', { title: ' Updated ' });
 
@@ -114,7 +133,7 @@ describe('ResumeService', () => {
         update: vi.fn(),
       },
     };
-    const service = new ResumeService(prisma as never);
+    const service = new ResumeService(prisma as never, storageMock as never);
 
     await expect(
       service.update('user-1', 'resume-2', { title: 'Updated' }),
@@ -129,7 +148,7 @@ describe('ResumeService', () => {
         delete: vi.fn().mockResolvedValue(resumeMock()),
       },
     };
-    const service = new ResumeService(prisma as never);
+    const service = new ResumeService(prisma as never, storageMock as never);
 
     await expect(service.remove('user-1', 'resume-1')).resolves.toEqual({
       success: true,
@@ -152,7 +171,7 @@ describe('ResumeService', () => {
         callback(tx),
       ),
     };
-    const service = new ResumeService(prisma as never);
+    const service = new ResumeService(prisma as never, storageMock as never);
 
     await service.setPrimary('user-1', 'resume-1');
 
@@ -173,7 +192,7 @@ describe('ResumeService', () => {
     };
     const service = new ResumeService(prisma as never);
 
-    await expect(service.create('user-1', dto)).rejects.toMatchObject({
+    await expect(service.create('user-1', dto, file)).rejects.toMatchObject({
       response: { code: 'CANDIDATE_PROFILE_NOT_FOUND' },
     });
     expect(prisma.resume.create).not.toHaveBeenCalled();

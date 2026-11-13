@@ -309,4 +309,84 @@ describe('VacancyService', () => {
       totalPages: 1,
     });
   });
+
+  it('lists only pending and in-review vacancies with server pagination', async () => {
+    const items = [
+      { id: 'queued-id', status: VacancyStatus.PENDING_MODERATION },
+    ];
+    const findMany = vi.fn().mockResolvedValue(items);
+    const count = vi.fn().mockResolvedValue(21);
+    const prisma = {
+      vacancy: { findMany, count },
+      $transaction: vi.fn(
+        async (operations: readonly Promise<unknown>[]) =>
+          Promise.all(operations),
+      ),
+    };
+    const service = new VacancyService(prisma as never);
+
+    const result = await service.listModerationQueue({
+      page: 2,
+      limit: 20,
+      search: '  оператор  ',
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: {
+            in: [
+              VacancyStatus.PENDING_MODERATION,
+              VacancyStatus.MODERATION,
+            ],
+          },
+          OR: [
+            { title: { contains: 'оператор', mode: 'insensitive' } },
+            {
+              employer: {
+                is: {
+                  OR: [
+                    { legalName: { contains: 'оператор', mode: 'insensitive' } },
+                    { shortName: { contains: 'оператор', mode: 'insensitive' } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+        orderBy: { createdAt: 'asc' },
+        skip: 20,
+        take: 20,
+      }),
+    );
+    expect(result).toEqual({
+      items,
+      meta: { page: 2, limit: 20, total: 21, totalPages: 2 },
+    });
+  });
+
+  it('can filter the moderation queue to a single active status', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
+    const prisma = {
+      vacancy: { findMany, count },
+      $transaction: vi.fn(
+        async (operations: readonly Promise<unknown>[]) =>
+          Promise.all(operations),
+      ),
+    };
+    const service = new VacancyService(prisma as never);
+
+    await service.listModerationQueue({
+      page: 1,
+      limit: 20,
+      status: VacancyStatus.MODERATION,
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { status: VacancyStatus.MODERATION },
+      }),
+    );
+  });
 });

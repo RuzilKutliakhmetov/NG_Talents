@@ -18,11 +18,14 @@ export default () => ({
   },
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:3000',
   storage: {
+    provider: process.env.STORAGE_PROVIDER ?? 'local',
     endpoint: process.env.STORAGE_ENDPOINT,
     region: process.env.STORAGE_REGION ?? 'us-east-1',
     accessKey: process.env.STORAGE_ACCESS_KEY,
     secretKey: process.env.STORAGE_SECRET_KEY,
     bucket: process.env.STORAGE_BUCKET,
+    localRootPath: process.env.STORAGE_LOCAL_PATH ?? './storage',
+    publicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL ?? 'http://localhost:3000/storage',
     forcePathStyle: process.env.STORAGE_FORCE_PATH_STYLE !== 'false',
     presignedUrlExpiresSeconds: Number(
       process.env.STORAGE_PRESIGNED_URL_EXPIRES_SECONDS ?? 300,

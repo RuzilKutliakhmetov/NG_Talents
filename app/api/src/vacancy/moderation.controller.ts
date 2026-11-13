@@ -19,6 +19,7 @@ import { UserRole } from '../generated/prisma/client.js';
 import {
   ModerationAuditPageResponseDto,
   ModerationAuditQueryDto,
+  ModerationQueueQueryDto,
   RejectVacancyDto,
 } from './dto/index.js';
 import { VacancyService } from './vacancy.service.js';
@@ -29,6 +30,19 @@ import { VacancyService } from './vacancy.service.js';
 @Roles(UserRole.ADMIN, UserRole.MODERATOR)
 export class ModerationController {
   constructor(private readonly service: VacancyService) {}
+
+  @Get()
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['PENDING_MODERATION', 'MODERATION'],
+  })
+  @ApiQuery({ name: 'search', required: false, maxLength: 200 })
+  @ApiQuery({ name: 'page', required: false, type: Number, minimum: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, maximum: 50 })
+  list(@Query() query: ModerationQueueQueryDto) {
+    return this.service.listModerationQueue(query);
+  }
 
   @Post(':vacancyId/start') start(
     @CurrentUser() user: { sub: string; role: UserRole },

@@ -19,6 +19,7 @@ import {
   UpdateVacancyDto,
   VacancyQueryDto,
   RejectVacancyDto,
+  ModerationQueueQueryDto,
   VacancyRequirementInput,
   VacancyCertificationInput,
 } from './dto/index.js';
@@ -368,6 +369,61 @@ export class VacancyService {
         createdAt: item.createdAt,
       })),
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async listModerationQueue(query: ModerationQueueQueryDto) {
+    const statusFilter = query.status
+      ? { status: query.status }
+      : {
+          status: {
+            in: [
+              VacancyStatus.PENDING_MODERATION,
+              VacancyStatus.MODERATION,
+            ],
+          },
+        };
+    const search = query.search?.trim();
+    const where: Prisma.VacancyWhereInput = {
+      ...statusFilter,
+      ...(search
+        ? {
+            OR: [
+              { title: { contains: search, mode: 'insensitive' } },
+              {
+                employer: {
+                  is: {
+                    OR: [
+                      { legalName: { contains: search, mode: 'insensitive' } },
+                      { shortName: { contains: search, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+    const skip = (query.page - 1) * query.limit;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.vacancy.findMany({
+        where,
+        include: managementInclude,
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take: query.limit,
+      }),
+      this.prisma.vacancy.count({ where }),
+    ]);
+
+    return {
+      items,
+      meta: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit),
+      },
     };
   }
 

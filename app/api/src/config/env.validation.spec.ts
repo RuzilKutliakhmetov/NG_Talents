@@ -4,24 +4,24 @@ import { validateEnvironment } from './env.validation.js';
 const validEnvironment = {
   DATABASE_URL: 'postgresql://localhost/db',
   JWT_ACCESS_SECRET: 'secret',
-  STORAGE_ENDPOINT: 'http://localhost:9000',
-  STORAGE_ACCESS_KEY: 'access',
-  STORAGE_SECRET_KEY: 'secret',
-  STORAGE_BUCKET: 'ngtalents',
+  STORAGE_PROVIDER: 'local',
   STORAGE_PRESIGNED_URL_EXPIRES_SECONDS: '300',
 };
 
 describe('validateEnvironment', () => {
-  it('accepts complete storage configuration', () => {
+  it('accepts complete local storage configuration', () => {
     expect(validateEnvironment(validEnvironment)).toEqual(validEnvironment);
   });
 
-  it('fails clearly when storage configuration is missing', () => {
-    const { STORAGE_SECRET_KEY: _secret, ...missingSecret } = validEnvironment;
+  it('fails clearly when S3 storage configuration is missing', () => {
+    const { STORAGE_PROVIDER: _provider, ...missingProvider } = validEnvironment;
 
-    expect(() => validateEnvironment(missingSecret)).toThrow(
-      'Missing required environment variable: STORAGE_SECRET_KEY',
-    );
+    expect(() =>
+      validateEnvironment({
+        ...missingProvider,
+        STORAGE_PROVIDER: 's3',
+      }),
+    ).toThrow('Missing required environment variable: STORAGE_ENDPOINT');
   });
 
   it('rejects an invalid presigned URL expiry', () => {

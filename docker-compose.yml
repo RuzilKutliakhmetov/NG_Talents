@@ -14,7 +14,7 @@ services:
       - "5433:5432"
 
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
 
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ngtalents -d ngtalents"]
@@ -33,7 +33,7 @@ services:
       - "6379:6379"
 
     volumes:
-      - redis_data:/data
+      - ./data/redis:/data
 
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -41,31 +41,4 @@ services:
       timeout: 3s
       retries: 10
 
-  minio:
-    image: quay.io/minio/minio:latest
-    container_name: ng-talents-minio
-    restart: unless-stopped
-
-    command: server /data --console-address ":9001"
-
-    environment:
-      MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY:-ngtalents_minio}
-      MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY:-ngtalents_minio_password}
-
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-
-    volumes:
-      - minio_data:/data
-
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
+volumes: {}

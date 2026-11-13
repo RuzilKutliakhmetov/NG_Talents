@@ -1,15 +1,24 @@
 export function validateEnvironment(config: Record<string, unknown>) {
-  const required = [
-    'DATABASE_URL',
-    'JWT_ACCESS_SECRET',
-    'STORAGE_ENDPOINT',
-    'STORAGE_ACCESS_KEY',
-    'STORAGE_SECRET_KEY',
-    'STORAGE_BUCKET',
-  ];
+  const required = ['DATABASE_URL', 'JWT_ACCESS_SECRET'];
   for (const key of required) {
     if (!config[key]) {
       throw new Error(`Missing required environment variable: ${key}`);
+    }
+  }
+
+  const storageProvider = String(config.STORAGE_PROVIDER ?? 'local').toLowerCase();
+  const isS3Storage = storageProvider === 's3' || storageProvider === 'minio';
+
+  if (isS3Storage) {
+    for (const key of [
+      'STORAGE_ENDPOINT',
+      'STORAGE_ACCESS_KEY',
+      'STORAGE_SECRET_KEY',
+      'STORAGE_BUCKET',
+    ]) {
+      if (!config[key]) {
+        throw new Error(`Missing required environment variable: ${key}`);
+      }
     }
   }
 

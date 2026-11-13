@@ -6,3 +6,4 @@ export * from './reject-vacancy.dto.js';
 export * from './vacancy-response.dto.js';
 export * from './moderation-audit-query.dto.js';
 export * from './moderation-audit-response.dto.js';
+export * from './moderation-queue-query.dto.js';

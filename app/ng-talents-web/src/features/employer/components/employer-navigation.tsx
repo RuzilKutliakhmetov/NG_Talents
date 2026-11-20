@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
+import { MessagesNavigationLink } from "@/features/messages/components/messages-navigation-link";
+import { NotificationBell } from "@/features/notifications/components/notification-bell";
 import { cn } from "cn";
 
 const links = [
@@ -43,6 +45,8 @@ export function EmployerNavigation() {
               </Link>
             );
           })}
+          <MessagesNavigationLink href="/employer/messages" />
+          <NotificationBell />
         </nav>
       </div>
     </header>

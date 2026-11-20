@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   EmployerMemberRole,
+  NotificationType,
   VacancyModerationAction,
   UserRole,
   VacancyStatus,
@@ -22,6 +23,10 @@ function employerMemberMock() {
       .fn()
       .mockResolvedValue({ memberRole: EmployerMemberRole.OWNER }),
   };
+}
+
+function notificationsMock() {
+  return { enqueue: vi.fn().mockResolvedValue(undefined) };
 }
 
 describe('VacancyService', () => {
@@ -68,7 +73,7 @@ describe('VacancyService', () => {
         callback(tx),
       ),
     };
-    const service = new VacancyService(prisma as never);
+    const service = new VacancyService(prisma as never, notificationsMock());
 
     const result = await service.create(
       'user-id',
@@ -106,7 +111,7 @@ describe('VacancyService', () => {
       employerMember: employerMemberMock(),
       $transaction: vi.fn(),
     };
-    const service = new VacancyService(prisma as never);
+    const service = new VacancyService(prisma as never, notificationsMock());
     await expect(
       service.create('user-id', UserRole.EMPLOYER, 'employer-id', {
         ...baseDto,
@@ -123,7 +128,7 @@ describe('VacancyService', () => {
     const prisma = {
       employerMember: { findUnique: vi.fn().mockResolvedValue(null) },
     };
-    const service = new VacancyService(prisma as never);
+    const service = new VacancyService(prisma as never, notificationsMock());
     await expect(
       service.submit(
         'user-id',
@@ -150,7 +155,7 @@ describe('VacancyService', () => {
         update: vi.fn().mockResolvedValue({ id: 'vacancy-id', status: next }),
       },
     };
-    const service = new VacancyService(prisma as never);
+    const service = new VacancyService(prisma as never, notificationsMock());
     const method =
       next === VacancyStatus.PENDING_MODERATION
         ? 'submit'
@@ -179,7 +184,7 @@ describe('VacancyService', () => {
           .mockResolvedValue({ id: 'vacancy-id', status: VacancyStatus.DRAFT }),
       },
     };
-    const service = new VacancyService(prisma as never);
+    const service = new VacancyService(prisma as never, notificationsMock());
     await expect(
       service.pause('user-id', UserRole.EMPLOYER, 'employer-id', 'vacancy-id'),
     ).rejects.toMatchObject({
@@ -194,7 +199,7 @@ describe('VacancyService', () => {
     [VacancyStatus.REJECTED, VacancyStatus.PENDING_MODERATION],
   ])('supports moderation transition %s -> %s', async (current, next) => {
     const prisma = moderationTransactionMock(current, next);
-    const service = new VacancyService(prisma as never);
+    const service = new VacancyService(prisma as never, notificationsMock());
     const result =
       next === VacancyStatus.MODERATION
         ? await service.startModeration(
@@ -245,6 +250,61 @@ describe('VacancyService', () => {
     });
   });
 
+  it('queues an in-app notification for employer members when a vacancy is approved', async () => {
+    const prisma = moderationTransactionMock(
+      VacancyStatus.MODERATION,
+      VacancyStatus.PUBLISHED,
+    );
+    prisma.tx.vacancy.findUnique.mockResolvedValue({
+      id: 'vacancy-id',
+      title: 'Оператор',
+      status: VacancyStatus.MODERATION,
+      employer: { members: [{ userId: 'employer-user-1' }] },
+    });
+    const notifications = notificationsMock();
+    const service = new VacancyService(prisma as never, notifications);
+
+    await service.approve('moderator-id', UserRole.MODERATOR, 'vacancy-id');
+
+    expect(notifications.enqueue).toHaveBeenCalledWith(
+      prisma.tx,
+      expect.objectContaining({
+        eventKey: 'vacancy-moderation:audit-id',
+        userIds: ['employer-user-1'],
+        type: NotificationType.VACANCY_PUBLISHED,
+      }),
+    );
+  });
+
+  it('queues an in-app notification with the rejection reason for employer members', async () => {
+    const prisma = moderationTransactionMock(
+      VacancyStatus.MODERATION,
+      VacancyStatus.REJECTED,
+    );
+    prisma.tx.vacancy.findUnique.mockResolvedValue({
+      id: 'vacancy-id',
+      title: 'Оператор',
+      status: VacancyStatus.MODERATION,
+      employer: { members: [{ userId: 'employer-user-1' }] },
+    });
+    const notifications = notificationsMock();
+    const service = new VacancyService(prisma as never, notifications);
+
+    await service.reject('moderator-id', UserRole.MODERATOR, 'vacancy-id', {
+      comment: 'Добавьте документы',
+    });
+
+    expect(notifications.enqueue).toHaveBeenCalledWith(
+      prisma.tx,
+      expect.objectContaining({
+        eventKey: 'vacancy-moderation:audit-id',
+        userIds: ['employer-user-1'],
+        type: NotificationType.VACANCY_REJECTED,
+        message: expect.stringContaining('Добавьте документы'),
+      }),
+    );
+  });
+
   it('keeps status and audit in one transaction when audit creation fails', async () => {
     const prisma = moderationTransactionMock(
       VacancyStatus.MODERATION,
@@ -253,7 +313,7 @@ describe('VacancyService', () => {
     prisma.tx.vacancyModerationAudit.create.mockRejectedValue(
       new Error('audit unavailable'),
     );
-    const service = new VacancyService(prisma as never);
+    const service = new VacancyService(prisma as never, notificationsMock());
 
     await expect(
       service.approve('moderator-id', UserRole.MODERATOR, 'vacancy-id'),
@@ -292,7 +352,7 @@ describe('VacancyService', () => {
         1,
       ]),
     };
-    const service = new VacancyService(prisma as never);
+    const service = new VacancyService(prisma as never, notificationsMock());
     const result = await service.listModerationAudit('vacancy-id', 1, 20);
 
     expect(result.items[0]).toEqual(
@@ -318,12 +378,11 @@ describe('VacancyService', () => {
     const count = vi.fn().mockResolvedValue(21);
     const prisma = {
       vacancy: { findMany, count },
-      $transaction: vi.fn(
-        async (operations: readonly Promise<unknown>[]) =>
-          Promise.all(operations),
+      $transaction: vi.fn(async (operations: readonly Promise<unknown>[]) =>
+        Promise.all(operations),
       ),
     };
-    const service = new VacancyService(prisma as never);
+    const service = new VacancyService(prisma as never, notificationsMock());
 
     const result = await service.listModerationQueue({
       page: 2,
@@ -335,10 +394,7 @@ describe('VacancyService', () => {
       expect.objectContaining({
         where: {
           status: {
-            in: [
-              VacancyStatus.PENDING_MODERATION,
-              VacancyStatus.MODERATION,
-            ],
+            in: [VacancyStatus.PENDING_MODERATION, VacancyStatus.MODERATION],
           },
           OR: [
             { title: { contains: 'оператор', mode: 'insensitive' } },
@@ -346,8 +402,12 @@ describe('VacancyService', () => {
               employer: {
                 is: {
                   OR: [
-                    { legalName: { contains: 'оператор', mode: 'insensitive' } },
-                    { shortName: { contains: 'оператор', mode: 'insensitive' } },
+                    {
+                      legalName: { contains: 'оператор', mode: 'insensitive' },
+                    },
+                    {
+                      shortName: { contains: 'оператор', mode: 'insensitive' },
+                    },
                   ],
                 },
               },
@@ -370,12 +430,11 @@ describe('VacancyService', () => {
     const count = vi.fn().mockResolvedValue(0);
     const prisma = {
       vacancy: { findMany, count },
-      $transaction: vi.fn(
-        async (operations: readonly Promise<unknown>[]) =>
-          Promise.all(operations),
+      $transaction: vi.fn(async (operations: readonly Promise<unknown>[]) =>
+        Promise.all(operations),
       ),
     };
-    const service = new VacancyService(prisma as never);
+    const service = new VacancyService(prisma as never, notificationsMock());
 
     await service.listModerationQueue({
       page: 1,

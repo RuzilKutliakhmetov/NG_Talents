@@ -8,6 +8,8 @@ import { useShallow } from "zustand/react/shallow";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { logout } from "@/features/auth/api";
 import { authStore } from "@/features/auth/store";
+import { MessagesNavigationLink } from "@/features/messages/components/messages-navigation-link";
+import { NotificationBell } from "@/features/notifications/components/notification-bell";
 import { normalizeApiError } from "@/lib/api/api-error";
 import { cn } from "cn";
 
@@ -70,6 +72,8 @@ export function CandidateNavigation() {
               </Link>
             );
           })}
+          <MessagesNavigationLink href="/candidate/messages" />
+          <NotificationBell />
           <Button
             variant="ghost"
             size="sm"

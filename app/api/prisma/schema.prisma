@@ -95,6 +95,7 @@ enum DocumentType {
 enum NotificationType {
   NEW_APPLICATION
   APPLICATION_STATUS_CHANGED
+  NEW_MESSAGE
   VACANCY_PUBLISHED
   VACANCY_REJECTED
   EMPLOYER_VERIFIED
@@ -203,6 +204,10 @@ model User {
   notifications Notification[]
 
   notificationPreferences NotificationPreference[]
+
+  notificationOutbox NotificationOutbox[]
+
+  messages Message[]
 
   subscriptions Subscription[]
 
@@ -651,6 +656,8 @@ model Application {
 
   statusHistory ApplicationStatusHistory[]
 
+  conversation Conversation?
+
   @@unique([vacancyId, candidateId])
   @@index([candidateId, createdAt])
   @@index([vacancyId, status])
@@ -680,6 +687,51 @@ model ApplicationStatusHistory {
   @@index([actorId, createdAt])
   @@index([toStatus, createdAt])
   @@map("application_status_history")
+}
+
+// ============================================================
+// APPLICATION CONVERSATIONS
+// ============================================================
+
+model Conversation {
+  id String @id @default(uuid())
+
+  applicationId String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  messages Message[]
+
+  @@index([updatedAt])
+  @@map("conversations")
+}
+
+model Message {
+  id String @id @default(uuid())
+
+  conversationId String
+
+  senderId String
+
+  clientMessageId String
+
+  body String @db.VarChar(5000)
+
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  sender User @relation(fields: [senderId], references: [id], onDelete: Restrict)
+
+  @@unique([conversationId, senderId, clientMessageId])
+  @@index([conversationId, createdAt, id])
+  @@index([conversationId, readAt, senderId])
+  @@map("messages")
 }
 
 // ============================================================
@@ -811,19 +863,56 @@ model Notification {
 
   data Json?
 
+  eventKey String? @unique
+
   sentAt DateTime?
 
   error String?
+
+  readAt DateTime?
 
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, readAt, createdAt])
   @@index([status])
   @@index([type])
   @@index([createdAt])
   @@map("notifications")
+}
+
+model NotificationOutbox {
+  id String @id @default(uuid())
+
+  eventKey String @unique
+
+  userId String
+
+  type NotificationType
+
+  title String
+
+  message String
+
+  data Json?
+
+  attempts Int @default(0)
+
+  availableAt DateTime @default(now())
+
+  processedAt DateTime?
+
+  lastError String?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([processedAt, availableAt, createdAt])
+  @@index([userId])
+  @@map("notification_outbox")
 }
 
 // ============================================================

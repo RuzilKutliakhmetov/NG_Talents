@@ -2,10 +2,15 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ApplicationStatus,
+  NotificationType,
   UserRole,
   VacancyStatus,
 } from '../generated/prisma/client.js';
 import { ApplicationService } from './application.service.js';
+
+function notificationsMock() {
+  return { enqueue: vi.fn().mockResolvedValue(undefined) };
+}
 
 describe('ApplicationService', () => {
   it('creates a candidate application and records initial history', async () => {
@@ -19,6 +24,9 @@ describe('ApplicationService', () => {
           coverLetter: 'hello',
           candidateComment: 'comment',
         }),
+      },
+      conversation: {
+        create: vi.fn().mockResolvedValue({ id: 'conversation-1' }),
       },
       applicationStatusHistory: {
         create: vi.fn().mockResolvedValue({ id: 'history-1' }),
@@ -35,6 +43,8 @@ describe('ApplicationService', () => {
         findUnique: vi.fn().mockResolvedValue({
           id: 'vacancy-1',
           status: VacancyStatus.PUBLISHED,
+          title: 'Оператор',
+          employer: { members: [{ userId: 'employer-user-1' }] },
         }),
       },
       application: {
@@ -43,7 +53,8 @@ describe('ApplicationService', () => {
       $transaction: vi.fn(async (cb: (client: typeof tx) => unknown) => cb(tx)),
     };
 
-    const service = new ApplicationService(prisma as never);
+    const notifications = notificationsMock();
+    const service = new ApplicationService(prisma as never, notifications);
     const result = await service.createApplication(
       'user-1',
       UserRole.CANDIDATE,
@@ -66,6 +77,17 @@ describe('ApplicationService', () => {
         toStatus: ApplicationStatus.NEW,
       }),
     });
+    expect(tx.conversation.create).toHaveBeenCalledWith({
+      data: { applicationId: 'app-1' },
+    });
+    expect(notifications.enqueue).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        eventKey: 'application-created:app-1',
+        userIds: ['employer-user-1'],
+        type: NotificationType.NEW_APPLICATION,
+      }),
+    );
   });
 
   it('creates an application with an owned resume', async () => {
@@ -74,6 +96,9 @@ describe('ApplicationService', () => {
         create: vi
           .fn()
           .mockResolvedValue({ id: 'app-1', resumeId: 'resume-1' }),
+      },
+      conversation: {
+        create: vi.fn().mockResolvedValue({ id: 'conversation-1' }),
       },
       applicationStatusHistory: { create: vi.fn() },
     };
@@ -95,7 +120,10 @@ describe('ApplicationService', () => {
       application: { findFirst: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (cb: (client: typeof tx) => unknown) => cb(tx)),
     };
-    const service = new ApplicationService(prisma as never);
+    const service = new ApplicationService(
+      prisma as never,
+      notificationsMock(),
+    );
 
     await service.createApplication('user-1', UserRole.CANDIDATE, {
       vacancyId: 'vacancy-1',
@@ -131,7 +159,10 @@ describe('ApplicationService', () => {
       resume: { findFirst: vi.fn().mockResolvedValue(null) },
       application: { findFirst: vi.fn() },
     };
-    const service = new ApplicationService(prisma as never);
+    const service = new ApplicationService(
+      prisma as never,
+      notificationsMock(),
+    );
 
     await expect(
       service.createApplication('user-1', UserRole.CANDIDATE, {
@@ -150,7 +181,10 @@ describe('ApplicationService', () => {
           .mockResolvedValue({ id: 'user-1', role: UserRole.EMPLOYER }),
       },
     };
-    const service = new ApplicationService(prisma as never);
+    const service = new ApplicationService(
+      prisma as never,
+      notificationsMock(),
+    );
 
     await expect(
       service.createApplication('user-1', UserRole.EMPLOYER, {
@@ -160,7 +194,7 @@ describe('ApplicationService', () => {
   });
 
   it('enforces valid status transitions', async () => {
-    const service = new ApplicationService({} as never);
+    const service = new ApplicationService({} as never, notificationsMock());
 
     expect(
       service.validateStatusTransition(
@@ -188,6 +222,58 @@ describe('ApplicationService', () => {
     ).toBe(true);
   });
 
+  it('queues an in-app notification for the candidate after a status change', async () => {
+    const tx = {
+      application: {
+        update: vi.fn().mockResolvedValue({
+          id: 'app-1',
+          status: ApplicationStatus.IN_REVIEW,
+        }),
+      },
+      applicationStatusHistory: {
+        create: vi.fn().mockResolvedValue({ id: 'history-1' }),
+      },
+    };
+    const prisma = {
+      employerMember: {
+        findUnique: vi.fn().mockResolvedValue({ memberRole: 'OWNER' }),
+      },
+      application: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'app-1',
+          candidateId: 'candidate-1',
+          status: ApplicationStatus.NEW,
+          vacancy: {
+            employerId: 'employer-1',
+            title: 'Оператор',
+          },
+        }),
+      },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+    };
+    const notifications = notificationsMock();
+    const service = new ApplicationService(prisma as never, notifications);
+
+    await service.changeApplicationStatus(
+      'employer-user-1',
+      UserRole.EMPLOYER,
+      'employer-1',
+      'app-1',
+      { status: ApplicationStatus.IN_REVIEW },
+    );
+
+    expect(notifications.enqueue).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        eventKey: 'application-status:history-1',
+        userIds: ['candidate-1'],
+        type: NotificationType.APPLICATION_STATUS_CHANGED,
+      }),
+    );
+  });
+
   it('prevents employer access to another employer application', async () => {
     const prisma = {
       application: {
@@ -206,7 +292,10 @@ describe('ApplicationService', () => {
       },
     };
 
-    const service = new ApplicationService(prisma as never);
+    const service = new ApplicationService(
+      prisma as never,
+      notificationsMock(),
+    );
     await expect(
       service.getEmployerApplication(
         'user-1',

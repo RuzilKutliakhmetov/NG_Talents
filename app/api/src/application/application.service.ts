@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   ApplicationStatus,
+  NotificationType,
   UserRole,
   VacancyStatus,
 } from '../generated/prisma/client.js';
@@ -15,6 +16,7 @@ import { ApplicationListQueryDto } from './dto/application-list-query.dto.js';
 import { CreateApplicationDto } from './dto/create-application.dto.js';
 import { EmployerApplicationListQueryDto } from './dto/employer-application-list-query.dto.js';
 import { UpdateApplicationStatusDto } from './dto/update-application-status.dto.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 const candidateResumeSelect = {
   id: true,
@@ -26,6 +28,17 @@ const candidateResumeSelect = {
   createdAt: true,
   updatedAt: true,
 } as const;
+
+const applicationStatusLabels: Record<ApplicationStatus, string> = {
+  [ApplicationStatus.NEW]: 'новый',
+  [ApplicationStatus.VIEWED]: 'просмотрен',
+  [ApplicationStatus.IN_REVIEW]: 'рассматривается',
+  [ApplicationStatus.INTERVIEW]: 'собеседование',
+  [ApplicationStatus.OFFER]: 'предложение о работе',
+  [ApplicationStatus.HIRED]: 'принят на работу',
+  [ApplicationStatus.REJECTED]: 'отказ',
+  [ApplicationStatus.WITHDRAWN]: 'отозван',
+};
 
 const allowedTransitions: Record<ApplicationStatus, ApplicationStatus[]> = {
   [ApplicationStatus.NEW]: [
@@ -61,7 +74,10 @@ const allowedTransitions: Record<ApplicationStatus, ApplicationStatus[]> = {
 
 @Injectable()
 export class ApplicationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   validateStatusTransition(
     fromStatus: ApplicationStatus,
@@ -83,6 +99,11 @@ export class ApplicationService {
 
     const vacancy = await this.prisma.vacancy.findUnique({
       where: { id: dto.vacancyId },
+      include: {
+        employer: {
+          select: { members: { select: { userId: true } } },
+        },
+      },
     });
     if (!vacancy)
       throw new NotFoundException({
@@ -144,6 +165,10 @@ export class ApplicationService {
         },
       });
 
+      await tx.conversation.create({
+        data: { applicationId: created.id },
+      });
+
       await tx.applicationStatusHistory.create({
         data: {
           applicationId: created.id,
@@ -153,6 +178,20 @@ export class ApplicationService {
           toStatus: ApplicationStatus.NEW,
           comment:
             dto.coverLetter?.trim() || dto.candidateComment?.trim() || null,
+        },
+      });
+      await this.notifications.enqueue(tx, {
+        eventKey: `application-created:${created.id}`,
+        userIds: vacancy.employer?.members.map((member) => member.userId) ?? [],
+        type: NotificationType.NEW_APPLICATION,
+        title: 'Новый отклик',
+        message: vacancy.title
+          ? `На вакансию «${vacancy.title}» поступил новый отклик.`
+          : 'На вашу вакансию поступил новый отклик.',
+        data: {
+          entityType: 'application',
+          entityId: created.id,
+          href: `/employer/applications/${created.id}`,
         },
       });
 
@@ -433,7 +472,7 @@ export class ApplicationService {
           where: { id: applicationId },
           data: { status: ApplicationStatus.VIEWED, viewedAt: new Date() },
         });
-        await tx.applicationStatusHistory.create({
+        const history = await tx.applicationStatusHistory.create({
           data: {
             applicationId,
             actorId: userId,
@@ -441,6 +480,20 @@ export class ApplicationService {
             fromStatus: ApplicationStatus.NEW,
             toStatus: ApplicationStatus.VIEWED,
             comment: 'Application marked as viewed',
+          },
+        });
+        await this.notifications.enqueue(tx, {
+          eventKey: `application-status:${history.id}`,
+          userIds: [application.candidateId],
+          type: NotificationType.APPLICATION_STATUS_CHANGED,
+          title: 'Изменился статус отклика',
+          message: application.vacancy.title
+            ? `Статус отклика на вакансию «${application.vacancy.title}» изменён: ${applicationStatusLabels[ApplicationStatus.VIEWED]}.`
+            : `Статус отклика изменён: ${applicationStatusLabels[ApplicationStatus.VIEWED]}.`,
+          data: {
+            entityType: 'application',
+            entityId: applicationId,
+            href: `/candidate/applications/${applicationId}`,
           },
         });
         return updated;
@@ -488,7 +541,7 @@ export class ApplicationService {
             : {}),
         },
       });
-      await tx.applicationStatusHistory.create({
+      const history = await tx.applicationStatusHistory.create({
         data: {
           applicationId,
           actorId: userId,
@@ -496,6 +549,20 @@ export class ApplicationService {
           fromStatus: application.status,
           toStatus: dto.status,
           comment: dto.comment?.trim() || null,
+        },
+      });
+      await this.notifications.enqueue(tx, {
+        eventKey: `application-status:${history.id}`,
+        userIds: [application.candidateId],
+        type: NotificationType.APPLICATION_STATUS_CHANGED,
+        title: 'Изменился статус отклика',
+        message: application.vacancy.title
+          ? `Статус отклика на вакансию «${application.vacancy.title}» изменён: ${applicationStatusLabels[dto.status]}.`
+          : `Статус отклика изменён: ${applicationStatusLabels[dto.status]}.`,
+        data: {
+          entityType: 'application',
+          entityId: applicationId,
+          href: `/candidate/applications/${applicationId}`,
         },
       });
       return updated;

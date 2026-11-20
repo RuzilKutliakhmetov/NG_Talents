@@ -22,6 +22,9 @@ export class RedisService implements OnModuleDestroy {
   get(key: string) {
     return this.client.get(key);
   }
+  duplicate() {
+    return this.client.duplicate({ lazyConnect: true });
+  }
   set(key: string, value: string, ttlSeconds?: number) {
     return ttlSeconds
       ? this.client.set(key, value, 'EX', ttlSeconds)

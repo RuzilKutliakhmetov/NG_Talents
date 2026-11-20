@@ -58,3 +58,22 @@ export async function logoutAll(): Promise<void> {
     authStore.getState().clearSession();
   }
 }
+
+export async function refreshSessionAccessToken(
+  expectedUserId: string,
+): Promise<string | null> {
+  try {
+    const { data } = await apiClient.post<AuthTokenResponse>("/auth/refresh");
+    const currentUserId = authStore.getState().user?.id;
+    if (currentUserId !== expectedUserId) return null;
+
+    authStore.getState().setAccessToken(data.accessToken);
+    return data.accessToken;
+  } catch (error) {
+    if (authStore.getState().user?.id === expectedUserId) {
+      queryClient.clear();
+      authStore.getState().clearSession();
+    }
+    throw error;
+  }
+}

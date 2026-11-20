@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   EmployerMemberRole,
+  NotificationType,
   Prisma,
   RequirementType,
   VacancyModerationAction,
@@ -14,6 +15,7 @@ import {
   VacancyStatus,
 } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import {
   CreateVacancyDto,
   UpdateVacancyDto,
@@ -39,7 +41,10 @@ const managementInclude = {
 
 @Injectable()
 export class VacancyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(
     userId: string,
@@ -377,10 +382,7 @@ export class VacancyService {
       ? { status: query.status }
       : {
           status: {
-            in: [
-              VacancyStatus.PENDING_MODERATION,
-              VacancyStatus.MODERATION,
-            ],
+            in: [VacancyStatus.PENDING_MODERATION, VacancyStatus.MODERATION],
           },
         };
     const search = query.search?.trim();
@@ -485,7 +487,14 @@ export class VacancyService {
     extra: Prisma.VacancyUpdateInput = {},
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const vacancy = await tx.vacancy.findUnique({ where: { id: vacancyId } });
+      const vacancy = await tx.vacancy.findUnique({
+        where: { id: vacancyId },
+        include: {
+          employer: {
+            select: { members: { select: { userId: true } } },
+          },
+        },
+      });
       if (!vacancy) throw this.notFound();
       if (!this.allowedTransition(vacancy.status, next, true))
         throw this.invalidTransition(vacancy.status, next);
@@ -494,7 +503,7 @@ export class VacancyService {
         data: { status: next, ...extra },
         include: managementInclude,
       });
-      await tx.vacancyModerationAudit.create({
+      const audit = await tx.vacancyModerationAudit.create({
         data: {
           vacancyId,
           actorId,
@@ -509,6 +518,29 @@ export class VacancyService {
               : undefined,
         },
       });
+      if (
+        action === VacancyModerationAction.APPROVE ||
+        action === VacancyModerationAction.REJECT
+      ) {
+        const approved = action === VacancyModerationAction.APPROVE;
+        await this.notifications.enqueue(tx, {
+          eventKey: `vacancy-moderation:${audit.id}`,
+          userIds:
+            vacancy.employer?.members.map((member) => member.userId) ?? [],
+          type: approved
+            ? NotificationType.VACANCY_PUBLISHED
+            : NotificationType.VACANCY_REJECTED,
+          title: approved ? 'Вакансия опубликована' : 'Вакансия отклонена',
+          message: approved
+            ? `Вакансия «${vacancy.title}» прошла модерацию.`
+            : `Вакансия «${vacancy.title}» отклонена модератором.${typeof extra.moderationComment === 'string' ? ` Причина: ${extra.moderationComment}` : ''}`,
+          data: {
+            entityType: 'vacancy',
+            entityId: vacancy.id,
+            href: `/employer/vacancies/${vacancy.id}/edit`,
+          },
+        });
+      }
       return updated;
     });
   }

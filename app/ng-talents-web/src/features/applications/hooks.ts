@@ -12,6 +12,7 @@ import {
   markEmployerApplicationViewed,
   updateEmployerApplicationStatus,
   updateEmployerApplicationComment,
+  getEmployerApplicationResume,
   withdrawCandidateApplication,
 } from "./api";
 import type {
@@ -169,6 +170,22 @@ export function useEmployerApplicationHistory(
   return useQuery({
     queryKey: applicationKeys.employerHistory(employerId, applicationId),
     queryFn: () => getEmployerApplicationHistory(employerId, applicationId),
+    enabled: Boolean(employerId && applicationId),
+    retry: false,
+  });
+}
+
+export function useEmployerApplicationResume(
+  employerId: string,
+  applicationId: string,
+) {
+  return useQuery({
+    queryKey: [
+      ...applicationKeys.employerDetail(employerId, applicationId),
+      "resume",
+    ],
+    queryFn: () =>
+      getEmployerApplicationResume(employerId, applicationId),
     enabled: Boolean(employerId && applicationId),
     retry: false,
   });

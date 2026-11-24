@@ -1,9 +1,12 @@
 import {
   IsBoolean,
   IsDateString,
+  IsArray,
+  IsInt,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -40,4 +43,22 @@ export class CreateCandidateExperienceDto {
   @IsString()
   @MaxLength(5000)
   description?: string;
+
+  @ApiPropertyOptional({ maxLength: 5000 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  achievements?: string;
+
+  @ApiPropertyOptional({ type: [String], example: ['NestJS', 'PostgreSQL'] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  technologies?: string[];
+
+  @ApiPropertyOptional({ example: 0, minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
 }

@@ -41,7 +41,11 @@ describe('AuthService', () => {
       firstName: ' First ',
       lastName: ' Last ',
     });
-    expect(prisma.user.create).toHaveBeenCalled();
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        candidateProfile: { create: {} },
+      }),
+    });
     expect(result).not.toHaveProperty('passwordHash');
   });
 

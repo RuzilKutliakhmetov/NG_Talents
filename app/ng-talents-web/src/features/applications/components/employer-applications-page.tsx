@@ -152,7 +152,7 @@ export function EmployerApplicationsPage() {
                       {application.candidate.lastName}
                     </h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {application.candidate.email}
+                      {application.candidate.email ?? "Контакт скрыт"}
                     </p>
                     <p className="mt-2 text-sm">
                       Вакансия: {application.vacancy.title}

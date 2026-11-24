@@ -81,6 +81,19 @@ export async function getEmployerApplication(
   return data;
 }
 
+export async function getEmployerApplicationResume(
+  employerId: string,
+  applicationId: string,
+) {
+  const { data } = await apiClient.get<{
+    resumeSnapshot: Record<string, unknown>;
+    resume: CandidateResumeSummary | null;
+  }>(
+    `/employer/${encodeURIComponent(employerId)}/applications/${encodeURIComponent(applicationId)}/resume`,
+  );
+  return data;
+}
+
 export async function markEmployerApplicationViewed(
   employerId: string,
   applicationId: string,

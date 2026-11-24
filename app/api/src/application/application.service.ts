@@ -8,6 +8,8 @@ import {
 import {
   ApplicationStatus,
   NotificationType,
+  Prisma,
+  ResumeStatus,
   UserRole,
   VacancyStatus,
 } from '../generated/prisma/client.js';
@@ -21,10 +23,12 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 const candidateResumeSelect = {
   id: true,
   title: true,
+  desiredPosition: true,
   originalName: true,
   mimeType: true,
   sizeBytes: true,
   isPrimary: true,
+  status: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -127,6 +131,7 @@ export class ApplicationService {
       });
 
     let resumeId: string | undefined;
+    let resumeSnapshot: Prisma.InputJsonObject | null = null;
     if (dto.resumeId) {
       const resume = await this.prisma.resume.findFirst({
         where: {
@@ -134,14 +139,94 @@ export class ApplicationService {
           userId,
           candidateProfile: { userId },
         },
-        select: { id: true },
+        include: {
+          experiences: {
+            orderBy: [{ sortOrder: 'asc' }, { startDate: 'desc' }],
+          },
+          educations: {
+            orderBy: [{ sortOrder: 'asc' }, { startDate: 'desc' }],
+          },
+          skills: { orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] },
+          languages: { orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] },
+          certifications: {
+            orderBy: [{ sortOrder: 'asc' }, { issuedAt: 'desc' }],
+          },
+          portfolioLinks: { orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }] },
+        },
       });
       if (!resume)
         throw new NotFoundException({
           code: 'RESUME_NOT_FOUND',
           message: 'Resume not found',
         });
+      if (resume.status !== ResumeStatus.PUBLISHED)
+        throw new BadRequestException({
+          code: 'RESUME_NOT_PUBLISHED',
+          message: 'Only published resumes can be attached to applications',
+        });
       resumeId = resume.id;
+      resumeSnapshot = {
+        resumeId: resume.id,
+        title: resume.title,
+        desiredPosition: resume.desiredPosition,
+        specialization: resume.specialization,
+        summary: resume.summary,
+        experienceYears: resume.experienceYears,
+        desiredSalary: resume.desiredSalaryMin ?? resume.desiredSalaryMax,
+        employmentType: resume.employmentType,
+        workSchedule: resume.workSchedule,
+        workFormat: resume.workFormat,
+        city: resume.city,
+        geoPreferences: resume.geoPreferences as Prisma.JsonObject | null,
+        experiences: resume.experiences.map((item) => ({
+          companyName: item.companyName,
+          position: item.position,
+          startDate: item.startDate?.toISOString() ?? null,
+          endDate: item.endDate?.toISOString() ?? null,
+          isCurrent: item.isCurrent,
+          description: item.description,
+          achievements: item.achievements,
+          technologies: item.technologies,
+          sortOrder: item.sortOrder,
+        })),
+        educations: resume.educations.map((item) => ({
+          institution: item.institution,
+          faculty: item.faculty,
+          specialization: item.specialization,
+          degree: item.degree,
+          startDate: item.startDate?.toISOString() ?? null,
+          endDate: item.endDate?.toISOString() ?? null,
+          isIncomplete: item.isIncomplete,
+          description: item.description,
+          sortOrder: item.sortOrder,
+        })),
+        skills: resume.skills.map((item) => ({
+          name: item.name,
+          category: item.category,
+          level: item.level,
+          sortOrder: item.sortOrder,
+        })),
+        languages: resume.languages.map((item) => ({
+          name: item.name,
+          level: item.level,
+          sortOrder: item.sortOrder,
+        })),
+        certifications: resume.certifications.map((item) => ({
+          name: item.name,
+          issuer: item.issuer,
+          issuedAt: item.issuedAt?.toISOString() ?? null,
+          expiresAt: item.expiresAt?.toISOString() ?? null,
+          url: item.url,
+          sortOrder: item.sortOrder,
+        })),
+        portfolioLinks: resume.portfolioLinks.map((item) => ({
+          title: item.title,
+          description: item.description,
+          url: item.url,
+          technologies: item.technologies,
+          sortOrder: item.sortOrder,
+        })),
+      };
     }
 
     const existing = await this.prisma.application.findFirst({
@@ -159,6 +244,7 @@ export class ApplicationService {
           vacancyId: dto.vacancyId,
           candidateId: userId,
           ...(resumeId ? { resumeId } : {}),
+          ...(resumeSnapshot ? { resumeSnapshot } : {}),
           status: ApplicationStatus.NEW,
           coverLetter: dto.coverLetter?.trim() || null,
           candidateComment: dto.candidateComment?.trim() || null,
@@ -247,7 +333,10 @@ export class ApplicationService {
   async getCandidateApplication(userId: string, applicationId: string) {
     const application = await this.prisma.application.findUnique({
       where: { id: applicationId },
-      include: { vacancy: true, resume: { select: candidateResumeSelect } },
+      include: {
+        vacancy: true,
+        resume: { select: candidateResumeSelect },
+      },
     });
     if (!application)
       throw new NotFoundException({
@@ -259,7 +348,10 @@ export class ApplicationService {
         code: 'APPLICATION_ACCESS_DENIED',
         message: 'Application access denied',
       });
-    return application;
+    return {
+      ...application,
+      resumeSnapshot: this.normalizeResumeSnapshot(application.resumeSnapshot),
+    };
   }
 
   async withdrawApplication(userId: string, applicationId: string) {
@@ -353,6 +445,13 @@ export class ApplicationService {
               lastName: true,
               email: true,
               role: true,
+              candidateProfile: {
+                select: {
+                  isPublic: true,
+                  hideFromEmployers: true,
+                  showContacts: true,
+                },
+              },
             },
           },
           vacancy: {
@@ -371,7 +470,30 @@ export class ApplicationService {
     ]);
 
     return {
-      items,
+      items: items.map((application) => {
+        const profile = application.candidate.candidateProfile;
+        if (profile?.hideFromEmployers || profile?.isPublic === false) {
+          return {
+            ...application,
+            candidate: {
+              ...application.candidate,
+              firstName: 'Кандидат',
+              lastName: '',
+              email: null,
+            },
+          };
+        }
+        return {
+          ...application,
+          candidate: {
+            ...application.candidate,
+            email:
+              profile?.showContacts === false
+                ? null
+                : application.candidate.email,
+          },
+        };
+      }),
       pagination: {
         page: query.page,
         limit: query.limit,
@@ -399,6 +521,70 @@ export class ApplicationService {
             lastName: true,
             email: true,
             role: true,
+            candidateProfile: {
+              select: {
+                isPublic: true,
+                hideFromEmployers: true,
+                showContacts: true,
+              },
+            },
+          },
+        },
+        resume: { select: candidateResumeSelect },
+      },
+    });
+    if (!application)
+      throw new NotFoundException({
+        code: 'APPLICATION_NOT_FOUND',
+        message: 'Application not found',
+      });
+    if (application.vacancy.employerId !== employerId)
+      throw new BadRequestException({
+        code: 'APPLICATION_EMPLOYER_MISMATCH',
+        message: 'Application belongs to another employer',
+      });
+    const profile = application.candidate.candidateProfile;
+    if (profile?.hideFromEmployers || profile?.isPublic === false) {
+      throw new NotFoundException({
+        code: 'APPLICATION_NOT_AVAILABLE',
+        message: 'Application candidate is not available',
+      });
+    }
+    return {
+      ...application,
+      resumeSnapshot: this.normalizeResumeSnapshot(application.resumeSnapshot),
+      candidate: {
+        ...application.candidate,
+        email:
+          profile?.showContacts === false ? null : application.candidate.email,
+      },
+    };
+  }
+
+  async getEmployerApplicationResume(
+    userId: string,
+    userRole: UserRole,
+    employerId: string,
+    applicationId: string,
+  ) {
+    await this.assertEmployerAccess(userId, userRole, employerId);
+    const application = await this.prisma.application.findUnique({
+      where: { id: applicationId },
+      select: {
+        id: true,
+        resumeSnapshot: true,
+        resume: { select: candidateResumeSelect },
+        vacancy: { select: { employerId: true } },
+        candidate: {
+          select: {
+            id: true,
+            candidateProfile: {
+              select: {
+                isPublic: true,
+                hideFromEmployers: true,
+                showContacts: true,
+              },
+            },
           },
         },
       },
@@ -413,7 +599,25 @@ export class ApplicationService {
         code: 'APPLICATION_EMPLOYER_MISMATCH',
         message: 'Application belongs to another employer',
       });
-    return application;
+    if (
+      application.candidate.candidateProfile?.hideFromEmployers ||
+      application.candidate.candidateProfile?.isPublic === false
+    ) {
+      throw new NotFoundException({
+        code: 'RESUME_NOT_AVAILABLE',
+        message: 'Resume is not available to employers',
+      });
+    }
+    if (!application.resumeSnapshot) {
+      throw new NotFoundException({
+        code: 'RESUME_SNAPSHOT_NOT_FOUND',
+        message: 'This application has no resume snapshot',
+      });
+    }
+    return {
+      resumeSnapshot: this.normalizeResumeSnapshot(application.resumeSnapshot),
+      resume: application.resume,
+    };
   }
 
   async updateEmployerComment(
@@ -626,6 +830,43 @@ export class ApplicationService {
         message: 'Employer access denied',
       });
     }
+  }
+
+  private normalizeResumeSnapshot(
+    snapshot: Prisma.JsonValue | null,
+  ): Record<string, unknown> | null {
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+      return null;
+    }
+    const value = snapshot as Record<string, unknown>;
+    const desiredSalary =
+      typeof value.desiredSalary === 'number'
+        ? value.desiredSalary
+        : typeof value.desiredSalaryMin === 'number'
+          ? value.desiredSalaryMin
+          : typeof value.desiredSalaryMax === 'number'
+            ? value.desiredSalaryMax
+            : null;
+    const educations = Array.isArray(value.educations)
+      ? value.educations.map((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            return item;
+          }
+          const education = item as Record<string, unknown>;
+          const normalized = { ...education };
+          if (
+            !normalized.startDate &&
+            typeof normalized.startYear === 'number'
+          ) {
+            normalized.startDate = `${normalized.startYear}-01-01T00:00:00.000Z`;
+          }
+          if (!normalized.endDate && typeof normalized.endYear === 'number') {
+            normalized.endDate = `${normalized.endYear}-01-01T00:00:00.000Z`;
+          }
+          return normalized;
+        })
+      : value.educations;
+    return { ...value, desiredSalary, educations };
   }
 
   private isFinalStatus(status: ApplicationStatus) {

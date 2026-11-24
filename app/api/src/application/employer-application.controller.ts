@@ -52,6 +52,21 @@ export class EmployerApplicationController {
     );
   }
 
+  @Get(':applicationId/resume')
+  @Roles(UserRole.EMPLOYER)
+  getResume(
+    @CurrentUser() user: { sub: string; role: UserRole },
+    @Param('employerId', ParseUUIDPipe) employerId: string,
+    @Param('applicationId', ParseUUIDPipe) applicationId: string,
+  ) {
+    return this.service.getEmployerApplicationResume(
+      user.sub,
+      user.role,
+      employerId,
+      applicationId,
+    );
+  }
+
   @Post(':applicationId/view')
   @Roles(UserRole.EMPLOYER)
   view(

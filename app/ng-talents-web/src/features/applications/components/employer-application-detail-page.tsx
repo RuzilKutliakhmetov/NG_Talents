@@ -18,6 +18,7 @@ import {
 import {
   useEmployerApplication,
   useEmployerApplicationHistory,
+  useEmployerApplicationResume,
   useMarkEmployerApplicationViewed,
   useUpdateEmployerApplicationComment,
   useUpdateEmployerApplicationStatus,
@@ -38,6 +39,10 @@ export function EmployerApplicationDetailPage({
   const employerId = useEmployerId(userId);
   const applicationQuery = useEmployerApplication(employerId, applicationId);
   const historyQuery = useEmployerApplicationHistory(
+    employerId ?? "",
+    applicationId,
+  );
+  const resumeQuery = useEmployerApplicationResume(
     employerId ?? "",
     applicationId,
   );
@@ -123,7 +128,9 @@ export function EmployerApplicationDetailPage({
     if (!nextStatus) return;
     if (
       ["HIRED", "REJECTED"].includes(nextStatus) &&
-      !window.confirm(`Изменить статус отклика на «${APPLICATION_STATUS_LABELS[nextStatus]}»?`)
+      !window.confirm(
+        `Изменить статус отклика на «${APPLICATION_STATUS_LABELS[nextStatus]}»?`,
+      )
     ) {
       return;
     }
@@ -135,7 +142,9 @@ export function EmployerApplicationDetailPage({
       });
       setNextStatus("");
       setComment("");
-      toast.success(`Статус изменён: ${APPLICATION_STATUS_LABELS[updated.status]}.`);
+      toast.success(
+        `Статус изменён: ${APPLICATION_STATUS_LABELS[updated.status]}.`,
+      );
     } catch (error) {
       setActionError(normalizeApiError(error).message);
     }
@@ -156,7 +165,7 @@ export function EmployerApplicationDetailPage({
               {application.candidate.firstName} {application.candidate.lastName}
             </h1>
             <p className="mt-1 text-muted-foreground">
-              {application.candidate.email}
+              {application.candidate.email ?? "Контакт скрыт"}
             </p>
             <p className="mt-3 text-sm">
               Вакансия: {application.vacancy.title}
@@ -167,12 +176,27 @@ export function EmployerApplicationDetailPage({
           </Badge>
         </div>
         <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-          <Info label="Дата отклика" value={formatPublishedDate(application.appliedAt) ?? "—"} />
-          <Info label="Последнее обновление" value={formatPublishedDate(application.updatedAt) ?? "—"} />
-          <Info label="Просмотрен" value={formatPublishedDate(application.viewedAt) ?? "Не отмечен"} />
+          <Info
+            label="Дата отклика"
+            value={formatPublishedDate(application.appliedAt) ?? "—"}
+          />
+          <Info
+            label="Последнее обновление"
+            value={formatPublishedDate(application.updatedAt) ?? "—"}
+          />
+          <Info
+            label="Просмотрен"
+            value={formatPublishedDate(application.viewedAt) ?? "Не отмечен"}
+          />
         </dl>
-        <TextBlock title="Сопроводительное письмо" text={application.coverLetter} />
-        <TextBlock title="Дополнительная информация" text={application.candidateComment} />
+        <TextBlock
+          title="Сопроводительное письмо"
+          text={application.coverLetter}
+        />
+        <TextBlock
+          title="Дополнительная информация"
+          text={application.candidateComment}
+        />
         <InternalCommentEditor
           savedComment={application.employerComment}
           disabled={commentMutation.isPending}
@@ -181,11 +205,34 @@ export function EmployerApplicationDetailPage({
             toast.success("Внутренний комментарий сохранён.");
           }}
         />
-        <p className="mt-4 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-          API отклика не включает метаданные выбранного резюме для работодателя;
-          доступ к файлу здесь не предоставляется.
-        </p>
+        {application.resume ? (
+          <p className="mt-4 text-sm">
+            Профессия в резюме:{" "}
+            <strong>
+              {application.resume.desiredPosition || "Не указана"}
+            </strong>
+          </p>
+        ) : (
+          <p className="mt-4 text-sm text-muted-foreground">
+            К отклику резюме не прикреплено.
+          </p>
+        )}
       </Card>
+
+      {application.resume ? (
+        <Card className="p-5 sm:p-6">
+          <h2 className="text-lg font-semibold">Резюме кандидата</h2>
+          {resumeQuery.isPending ? (
+            <Skeleton className="mt-4 h-32 rounded-xl" />
+          ) : resumeQuery.isError ? (
+            <p role="alert" className="mt-3 text-sm text-destructive">
+              {normalizeApiError(resumeQuery.error).message}
+            </p>
+          ) : (
+            <ResumeSnapshot snapshot={resumeQuery.data.resumeSnapshot} />
+          )}
+        </Card>
+      ) : null}
 
       <Card className="p-5 sm:p-6">
         <h2 className="text-lg font-semibold">Рассмотрение</h2>
@@ -227,7 +274,9 @@ export function EmployerApplicationDetailPage({
               </select>
             </label>
             <label className="space-y-2 text-sm">
-              <span className="font-medium">Комментарий к изменению (необязательно)</span>
+              <span className="font-medium">
+                Комментарий к изменению (необязательно)
+              </span>
               <input
                 className="h-10 w-full rounded-md border border-input bg-background px-3"
                 value={comment}
@@ -342,11 +391,7 @@ function InternalCommentEditor({
           {error}
         </p>
       ) : null}
-      <Button
-        variant="outline"
-        disabled={disabled}
-        onClick={() => void save()}
-      >
+      <Button variant="outline" disabled={disabled} onClick={() => void save()}>
         {disabled ? "Сохраняем..." : "Сохранить комментарий"}
       </Button>
     </div>
@@ -369,5 +414,112 @@ function TextBlock({ title, text }: { title: string; text: string | null }) {
       <h2 className="font-semibold">{title}</h2>
       <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{text}</p>
     </section>
+  );
+}
+
+function ResumeSnapshot({ snapshot }: { snapshot: Record<string, unknown> }) {
+  const desiredPosition =
+    typeof snapshot.desiredPosition === "string"
+      ? snapshot.desiredPosition
+      : null;
+  const summary =
+    typeof snapshot.summary === "string" ? snapshot.summary : null;
+  const city = typeof snapshot.city === "string" ? snapshot.city : null;
+  const desiredSalary =
+    typeof snapshot.desiredSalary === "number"
+      ? snapshot.desiredSalary
+      : typeof snapshot.desiredSalaryMin === "number"
+        ? snapshot.desiredSalaryMin
+        : typeof snapshot.desiredSalaryMax === "number"
+          ? snapshot.desiredSalaryMax
+          : null;
+  const experiences = Array.isArray(snapshot.experiences)
+    ? snapshot.experiences
+    : [];
+  const educations = Array.isArray(snapshot.educations)
+    ? snapshot.educations
+    : [];
+
+  return (
+    <div className="mt-4 space-y-4">
+      {desiredPosition ? (
+        <TextBlock title="Профессия" text={desiredPosition} />
+      ) : null}
+      {city ? <Info label="Город" value={city} /> : null}
+      {desiredSalary ? (
+        <Info
+          label="Желаемая зарплата"
+          value={`${desiredSalary.toLocaleString("ru-RU")} ₽`}
+        />
+      ) : null}
+      {summary ? (
+        <TextBlock title="Профессиональное резюме" text={summary} />
+      ) : null}
+      {experiences.length ? (
+        <section>
+          <h3 className="font-semibold">Опыт работы</h3>
+          <ul className="mt-3 space-y-3">
+            {experiences.map((experience, index) => {
+              if (typeof experience !== "object" || experience === null) {
+                return null;
+              }
+              const item = experience as Record<string, unknown>;
+              const companyName =
+                typeof item.companyName === "string" ? item.companyName : "";
+              const position =
+                typeof item.position === "string" ? item.position : "";
+              const description =
+                typeof item.description === "string" ? item.description : null;
+              return (
+                <li key={index} className="rounded-md border p-3">
+                  <p className="font-medium">
+                    {[position, companyName].filter(Boolean).join(" · ")}
+                  </p>
+                  {description ? (
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+                      {description}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+      {educations.length ? (
+        <section>
+          <h3 className="font-semibold">Образование</h3>
+          <ul className="mt-3 space-y-3">
+            {educations.map((education, index) => {
+              if (typeof education !== "object" || education === null) {
+                return null;
+              }
+              const item = education as Record<string, unknown>;
+              const institution =
+                typeof item.institution === "string" ? item.institution : "";
+              const specialization =
+                typeof item.specialization === "string"
+                  ? item.specialization
+                  : "";
+              const degree =
+                typeof item.degree === "string" ? item.degree : null;
+              return (
+                <li key={index} className="rounded-md border p-3">
+                  <p className="font-medium">
+                    {[institution, degree].filter(Boolean).join(" · ") ||
+                      "Учебное заведение"}
+                  </p>
+                  {specialization ? (
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {specialization}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+    </div>
   );
 }

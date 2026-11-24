@@ -1,10 +1,10 @@
 import {
+  IsBoolean,
+  IsDateString,
   IsInt,
   IsOptional,
   IsString,
-  Max,
   MaxLength,
-  Min,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -27,19 +27,15 @@ export class UpdateCandidateEducationDto {
   @MaxLength(150)
   degree?: string;
 
-  @ApiPropertyOptional({ example: 2018, minimum: 1900, maximum: 2200 })
+  @ApiPropertyOptional({ example: '2018-09-01', format: 'date' })
   @IsOptional()
-  @IsInt()
-  @Min(1900)
-  @Max(2200)
-  startYear?: number;
+  @IsDateString()
+  startDate?: string;
 
-  @ApiPropertyOptional({ example: 2020, minimum: 1900, maximum: 2200 })
+  @ApiPropertyOptional({ example: '2020-06-30', format: 'date' })
   @IsOptional()
-  @IsInt()
-  @Min(1900)
-  @Max(2200)
-  endYear?: number;
+  @IsDateString()
+  endDate?: string;
 
   @ApiPropertyOptional({
     example: 'Тема диплома: рекомендательные системы и персонализация.',
@@ -49,4 +45,20 @@ export class UpdateCandidateEducationDto {
   @IsString()
   @MaxLength(5000)
   description?: string;
+
+  @ApiPropertyOptional({ example: 'Факультет информатики', maxLength: 300 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  faculty?: string;
+
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  isIncomplete?: boolean;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
 }

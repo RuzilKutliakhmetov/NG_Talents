@@ -1,9 +1,12 @@
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
+  IsInt,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -43,4 +46,22 @@ export class UpdateCandidateExperienceDto {
   @IsString()
   @MaxLength(5000)
   description?: string;
+
+  @ApiPropertyOptional({ maxLength: 5000 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  achievements?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  technologies?: string[];
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
 }

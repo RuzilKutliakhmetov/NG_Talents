@@ -1,8 +1,9 @@
 import {
+  IsBoolean,
+  IsDateString,
   IsInt,
   IsOptional,
   IsString,
-  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -28,19 +29,14 @@ export class CreateCandidateEducationDto {
   @MaxLength(150)
   degree?: string;
 
-  @ApiPropertyOptional({ example: 2015, minimum: 1900, maximum: 2200 })
-  @IsOptional()
-  @IsInt()
-  @Min(1900)
-  @Max(2200)
-  startYear?: number;
+  @ApiProperty({ example: '2015-09-01', format: 'date' })
+  @IsDateString()
+  startDate!: string;
 
-  @ApiPropertyOptional({ example: 2019, minimum: 1900, maximum: 2200 })
+  @ApiPropertyOptional({ example: '2019-06-30', format: 'date' })
   @IsOptional()
-  @IsInt()
-  @Min(1900)
-  @Max(2200)
-  endYear?: number;
+  @IsDateString()
+  endDate?: string;
 
   @ApiPropertyOptional({
     example: 'Специализация по аналитике данных и машинному обучению.',
@@ -50,4 +46,21 @@ export class CreateCandidateEducationDto {
   @IsString()
   @MaxLength(5000)
   description?: string;
+
+  @ApiPropertyOptional({ example: 'Факультет информатики', maxLength: 300 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  faculty?: string;
+
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  isIncomplete?: boolean;
+
+  @ApiPropertyOptional({ example: 0, minimum: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
 }

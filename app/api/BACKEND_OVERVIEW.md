@@ -90,11 +90,10 @@ npm run test:e2e
 ### Кандидат
 
 1. Зарегистрироваться и войти.
-2. При необходимости создать профиль через `POST /candidate/profile`.
-3. Заполнить опыт, образование и сертификаты.
-4. Загрузить резюме.
-5. Найти опубликованную вакансию и отправить отклик.
-6. Смотреть отклики и их историю; скачать собственные файлы.
+2. Заполнить профиль: опыт, образование, сертификаты и курсы, языки и портфолио.
+3. Заполнить профиль и сохранить его одной кнопкой; данные профиля копируются в резюме и доступны там только для чтения. Желаемая зарплата задаётся в резюме в рублях.
+4. Найти опубликованную вакансию и отправить отклик.
+5. Смотреть отклики и их историю; скачать собственные файлы.
 
 ### Работодатель
 
@@ -132,23 +131,27 @@ npm run test:e2e
 
 | Метод и путь | Тело | Результат / назначение |
 |---|---|---|
-| `GET /candidate/profile` | — | Профиль с `experiences`, `educations`, `certifications`; если профиля ещё нет — `404 CANDIDATE_PROFILE_NOT_FOUND`. |
-| `POST /candidate/profile` | `desiredSalaryMin?`, `desiredSalaryMax?`, `readyForShiftWork?`, `about?` | Создание профиля. |
-| `PATCH /candidate/profile` | Те же поля, все необязательные | Обновление профиля. Минимальная зарплата не должна превышать максимальную. |
+| `GET /candidate/profile` | — | Профиль с `experiences`, `educations`, `certifications`, `languages`, `portfolioLinks`; для существующего кандидата без профиля создаётся пустой профиль. |
+| `POST /candidate/profile` | Профильные поля, например `readyForShiftWork?`, `about?` | Создание профиля. Зарплата задаётся только в резюме. |
+| `PATCH /candidate/profile` | Профильные поля и/или массивы профильных разделов, все необязательные | Атомарно обновляет профиль и переданные разделы; отсутствие массива не меняет соответствующий раздел. Frontend отправляет все профильные разделы одной формой. |
+| `PATCH /candidate/profile/sections` | Любое подмножество массивов `experiences`, `educations`, `certifications`, `languages`, `portfolioLinks` | Атомарно заменяет только переданные разделы; отсутствие массива не меняет соответствующий раздел. |
 | `GET /candidate/experience` | — | Опыт работы, сортировка от нового к старому. |
 | `POST /candidate/experience` | `companyName`, `position`, `startDate`; опционально `endDate`, `isCurrent`, `description` | Создание записи опыта. `startDate`/`endDate` — date-time/date-совместимая ISO-строка. |
 | `PATCH /candidate/experience/{id}` | Любые поля создания, необязательные | Обновление своей записи. Для текущей позиции `endDate` очищается. |
 | `DELETE /candidate/experience/{id}` | — | Удаление своей записи; `{ success: true }`. |
-| `GET /candidate/education` | — | Образование, сортировка по `startYear` по убыванию. |
-| `POST /candidate/education` | `institution`, `specialization`; опционально `degree`, `startYear`, `endYear`, `description` | Создание записи. |
+| `GET /candidate/education` | — | Образование, сортировка по `startDate` по убыванию. |
+| `POST /candidate/education` | `institution`, `specialization`; опционально `degree`, `startDate`, `endDate`, `description` | Создание записи. Даты — ISO date строки. |
 | `PATCH /candidate/education/{id}` | Те же поля, необязательные | Обновление своей записи. |
 | `DELETE /candidate/education/{id}` | — | Удаление своей записи; `{ success: true }`. |
 | `GET /candidate/certifications` | — | Сертификаты, сортировка по дате истечения. |
 | `POST /candidate/certifications` | `type`, `name`; опционально `number`, `issuedAt`, `expiresAt`, `issuer` | Создание сертификата. |
 | `PATCH /candidate/certifications/{id}` | Те же поля, необязательные | Обновление своего сертификата. |
 | `DELETE /candidate/certifications/{id}` | — | Удаление своего сертификата; `{ success: true }`. |
+Опыт, образование, сертификаты/курсы, языки и портфолио хранятся в профиле. Опыт и образование используют одинаковые `startDate`/`endDate`; дата окончания не может быть раньше даты начала, текущая работа и незавершённое образование не имеют даты окончания. Зарплата задаётся только в резюме одним целым значением в рублях.
 
-Профиль необходимо создать до добавления опыта, образования, сертификатов, резюме и документов. В DTO для опыта есть флаг `isCurrent`; даты и года проверяются backend.
+Миграция `20261123160000_stage83_resume_salary_and_education_dates` переводит прежние годы образования в даты 1 января соответствующего года и приводит валюту резюме к RUB. Перед запуском сначала примените предыдущие миграции Stage 8. Не выполняйте миграцию вручную или на production без резервной копии и предварительной проверки на тестовой базе.
+
+Для старых резюме с диапазоном зарплаты API выдаёт `desiredSalary` по нижней границе; оба legacy-значения сохраняются в БД до следующего сохранения резюме. При сохранении новой суммы backend записывает её в оба legacy-поля, чтобы не потерять историю диапазонов без пользовательского изменения.
 
 ### 5.3 Резюме и документы кандидата
 
@@ -165,6 +168,8 @@ npm run test:e2e
 | `PATCH /candidate/resumes/{id}` | JSON: опционально `title` | Изменить заголовок. |
 | `DELETE /candidate/resumes/{id}` | — | Удалить файл и метаданные; `{ success: true }`. |
 | `POST /candidate/resumes/{id}/primary` | — | Назначить основным; у профиля может быть только одно primary-резюме. |
+
+**Структурированное резюме:** `POST /candidate/resumes/structured` создаёт черновик без пользовательского поля «Название резюме»; основная роль называется «Профессия». При создании данные опыта, образования, сертификатов/курсов, языков и портфолио копируются из профиля. Эти разделы отображаются в резюме только для чтения и изменяются через профиль. Обновление резюме принимает его основные поля, желаемую зарплату (`desiredSalary`, целое число в рублях) и навыки; публикация/снятие/архивация — `POST /candidate/resumes/{id}/publish`, `/unpublish`, `/archive`.
 
 **Документы — `/candidate/documents`:**
 
@@ -366,14 +371,12 @@ Query списка кандидата: `status`, `page` (1), `limit` (20, max 50
 
 ```json
 {
-  "desiredSalaryMin": 150000,
-  "desiredSalaryMax": 220000,
   "readyForShiftWork": true,
   "about": "Опытный инженер, открыт к вахтовой работе."
 }
 ```
 
-`desiredSalaryMin`, `desiredSalaryMax`: integer ≥ 0; `readyForShiftWork`: boolean; `about`: string до 5000 символов. Минимум не должен быть больше максимума. У `PATCH` отсутствие поля означает «не менять».
+`readyForShiftWork`: boolean; `about`: string до 5000 символов. У `PATCH` отсутствие поля означает «не менять».
 
 Ответ `GET /candidate/profile` имеет базовые поля:
 
@@ -386,8 +389,6 @@ Query списка кандидата: `status`, `page` (1), `limit` (20, max 50
   city: string | null;
   region: string | null;
   desiredPosition: string | null;
-  desiredSalaryMin: number | null;
-  desiredSalaryMax: number | null;
   readyForShift: boolean;
   readyForShiftWork: boolean;
   shiftSchedule: string | null;
@@ -400,6 +401,8 @@ Query списка кандидата: `status`, `page` (1), `limit` (20, max 50
   experiences: CandidateExperience[];
   educations: CandidateEducation[];
   certifications: CandidateCertification[];
+  languages: CandidateProfileLanguage[];
+  portfolioLinks: CandidateProfilePortfolioLink[];
 }
 ```
 
@@ -413,18 +416,28 @@ type CandidateExperience = {
 };
 type CandidateEducation = {
   id: string; candidateProfileId: string; institution: string; specialization: string;
-  degree: string | null; startYear: number | null; endYear: number | null;
+  degree: string | null; startDate: string | null; endDate: string | null;
   description: string | null; createdAt: string; updatedAt: string;
 };
 type CandidateCertification = {
   id: string; candidateProfileId: string;
-  type: "A1" | "B1_1" | "ELECTRICAL_SAFETY" | "NAKS" | "OTHER";
+  type: "A1" | "B1_1" | "ELECTRICAL_SAFETY" | "NAKS" | "COURSE" | "OTHER";
   name: string; number: string | null; issuedAt: string | null; expiresAt: string | null;
   issuer: string | null; createdAt: string; updatedAt: string;
 };
+type CandidateProfileLanguage = {
+  id: string; name: string; level: "A1" | "A2" | "B1" | "B2" | "C1" | "C2" | "NATIVE";
+  sortOrder: number;
+};
+type CandidateProfilePortfolioLink = {
+  id: string; title: string; description: string | null; url: string;
+  technologies: string[]; sortOrder: number;
+};
 ```
 
-Создание опыта принимает `companyName` (≤200), `position` (≤200), `startDate` (ISO date string) и опциональные `endDate` (ISO date string), `isCurrent` (boolean), `description` (≤5000). Образование: обязательны `institution` и `specialization` (до 300 символов каждое), дополнительные `degree` (≤150), `startYear`/`endYear` (целые 1900–2200), `description` (≤5000). Сертификат: обязательны `type` и `name` (≤300); дополнительные `number` (≤100), `issuedAt`, `expiresAt` (ISO date strings), `issuer` (≤300).
+Создание опыта принимает `companyName` (≤200), `position` (≤200), `startDate` (ISO date string) и опциональные `endDate` (ISO date string), `isCurrent` (boolean), `description` (≤5000). Образование: обязательны `institution` и `specialization` (до 300 символов каждое), дополнительные `degree` (≤150), `startDate`/`endDate` (ISO date strings), `description` (≤5000). Сертификат: обязательны `type` и `name` (≤300); дополнительные `number` (≤100), `issuedAt`, `expiresAt` (ISO date strings), `issuer` (≤300).
+
+`PATCH /candidate/profile/sections` атомарно заменяет только переданные массивы. Пустой массив очищает соответствующий раздел; чтобы оставить раздел без изменений, не передавайте его. Курсы используют `CandidateCertificationType.COURSE`.
 
 #### Компания и участники работодателя
 
@@ -624,7 +637,7 @@ type CandidateDocument = {
 | Область | Сущности и связи |
 |---|---|
 | Пользователи и сессии | `User` хранит email, password hash, телефон/ФИО, роль и статус; один user владеет сессиями. `Session` хранит hash refresh token, сроки, user agent/IP и время использования. |
-| Профиль кандидата | `CandidateProfile` — один к одному с `User`; содержит данные о городе/регионе, желаемой должности и зарплате, готовности к вахте, описании и видимости. Дочерние коллекции: `CandidateExperience`, `CandidateEducation`, `CandidateCertification`, `Resume`, `CandidateDocument`. |
+| Профиль кандидата | `CandidateProfile` — один к одному с `User`; содержит личные профессиональные сведения, город, занятость, описание и настройки видимости. Опыт, образование, сертификаты/курсы, языки и портфолио хранятся в дочерних коллекциях. Зарплата хранится только в `Resume`. |
 | Работодатель | `Employer` содержит ИНН, юридическое/короткое наименование, контакты, описание, сайт, адрес и состояние проверки. `EmployerMember` связывает работодателя и пользователя, хранит роль. `EmployerVerification` — история проверки. |
 | Вакансии | `Vacancy` принадлежит работодателю и создателю; содержит текст, зарплату, занятость/формат/локацию, условия, статус и даты публикации/закрытия. Связанные сущности: `VacancyRequirement`, `VacancyCertification`, `VacancyModerationAudit`. |
 | Отклики | `Application` связывает вакансию и кандидата, может ссылаться на резюме; хранит статус, письма/комментарии и даты. `ApplicationStatusHistory` — журнал переходов и actor. |
@@ -648,7 +661,7 @@ type CandidateDocument = {
 - `VacancyRegion`: `BASHKORTOSTAN`, `KHMAO`, `YANAO`, `TATARSTAN`, `OTHER`.
 - `VacancyStatus`: `DRAFT`, `PENDING_MODERATION`, `MODERATION`, `PUBLISHED`, `PAUSED`, `CLOSED`, `REJECTED`, `ARCHIVED`.
 - `ApplicationStatus`: `NEW`, `VIEWED`, `IN_REVIEW`, `INTERVIEW`, `OFFER`, `HIRED`, `REJECTED`, `WITHDRAWN`.
-- `CandidateCertificationType`: `A1`, `B1_1`, `ELECTRICAL_SAFETY`, `NAKS`, `OTHER`.
+- `CandidateCertificationType`: `A1`, `B1_1`, `ELECTRICAL_SAFETY`, `NAKS`, `COURSE`, `OTHER`.
 - `DocumentType`: `RESUME`, `CERTIFICATE`, `LICENSE`, `ID_CARD`, `DIPLOMA`, `OTHER`.
 - `EmployerMemberRole`: `OWNER`, `ADMIN`, `HR`, `RECRUITER`.
 - `VerificationStatus` / `EmployerVerificationStatus`: `NOT_VERIFIED`, `PENDING`, `VERIFIED`, `REQUIRES_ATTENTION`, `REJECTED`.
@@ -662,7 +675,7 @@ type CandidateDocument = {
 1. Реализовать слой API с базовым URL `/api/v1`, bearer access token и cookie credentials. Не помещать refresh token в `localStorage`: сервер устанавливает его как HttpOnly cookie.
 2. После входа/обновления хранить access token согласно выбранной модели frontend и при старте приложения проверять `GET /auth/me`; при `401` пробовать `POST /auth/refresh` один раз, затем сбрасывать сессию.
 3. Роутинг и меню строить по `user.role`, но права для работодателя также зависят от членства и его `memberRole`; серверный ответ может быть `403`.
-4. Учитывать отсутствие профиля кандидата: `GET /candidate/profile` не создаёт его автоматически и возвращает 404.
+4. `GET /candidate/profile` создаёт пустой профиль для ранее зарегистрированного кандидата; профиль и все его разделы можно сохранить одним запросом `PATCH /candidate/profile`. Endpoint `/candidate/profile/sections` остаётся доступен для частичного обновления.
 5. Передавать upload именно как `multipart/form-data`, не задавая вручную boundary. Отображать ошибки `FILE_REQUIRED`, `FILE_TOO_LARGE`, `FILE_MIME_TYPE_NOT_ALLOWED`, `FILE_EXTENSION_NOT_ALLOWED`, `STORAGE_UPLOAD_FAILED`.
 6. Для списков обрабатывать пагинацию и enum-фильтры, сохранять фильтры в URL страницы при необходимости. Пустой результат — это пустой `items`, а не ошибка.
 7. Вакансии, отклики и модерация имеют state transitions. UI должен показывать только подходящие действия, но также отображать возвращённый backend `code/message` при гонках/устаревших состояниях.

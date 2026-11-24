@@ -41,6 +41,7 @@ export class AuthService {
         firstName: dto.firstName.trim(),
         lastName: dto.lastName.trim(),
         middleName: dto.middleName?.trim(),
+        candidateProfile: { create: {} },
       },
     });
     return this.publicUser(user);

@@ -6,9 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  APPLICATION_STATUS_LABELS,
-} from "@/features/applications/types";
+import { APPLICATION_STATUS_LABELS } from "@/features/applications/types";
 import {
   useCandidateApplication,
   useCandidateApplicationHistory,
@@ -63,7 +61,9 @@ export function CandidateApplicationDetailPage({ id }: { id: string }) {
       <Card className="p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">{application.vacancy.title}</h1>
+            <h1 className="text-2xl font-semibold">
+              {application.vacancy.title}
+            </h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Данные о работодателе не предоставляются в этом ответе API.
             </p>
@@ -73,13 +73,45 @@ export function CandidateApplicationDetailPage({ id }: { id: string }) {
           </Badge>
         </div>
         <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-          <Info label="Дата отклика" value={formatDate(application.appliedAt)} />
-          <Info label="Последнее обновление" value={formatDate(application.updatedAt)} />
-          <Info label="Резюме" value={application.resume?.title ?? "Не прикреплено"} />
+          <Info
+            label="Дата отклика"
+            value={formatDate(application.appliedAt)}
+          />
+          <Info
+            label="Последнее обновление"
+            value={formatDate(application.updatedAt)}
+          />
+          <Info
+            label="Профессия"
+            value={application.resume?.desiredPosition ?? "Не указана"}
+          />
           <Info label="Отклик ID" value={application.id} />
+          {(() => {
+            const snapshot = application.resumeSnapshot;
+            const salary =
+              typeof snapshot?.desiredSalary === "number"
+                ? snapshot.desiredSalary
+                : typeof snapshot?.desiredSalaryMin === "number"
+                  ? snapshot.desiredSalaryMin
+                  : typeof snapshot?.desiredSalaryMax === "number"
+                    ? snapshot.desiredSalaryMax
+                    : null;
+            return salary ? (
+              <Info
+                label="Желаемая зарплата"
+                value={`${salary.toLocaleString("ru-RU")} ₽`}
+              />
+            ) : null;
+          })()}
         </dl>
-        <TextSection title="Сопроводительное письмо" text={application.coverLetter} />
-        <TextSection title="Дополнительная информация" text={application.candidateComment} />
+        <TextSection
+          title="Сопроводительное письмо"
+          text={application.coverLetter}
+        />
+        <TextSection
+          title="Дополнительная информация"
+          text={application.candidateComment}
+        />
         {application.vacancy.status === "PUBLISHED" ? (
           <Link
             href={`/vacancies/${encodeURIComponent(application.vacancyId)}`}

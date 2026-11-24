@@ -23,6 +23,7 @@ export interface CandidateApplication extends Application {
 export interface CandidateApplicationDetail extends Application {
   vacancy: Omit<Vacancy, "employer">;
   resume: CandidateResumeSummary | null;
+  resumeSnapshot: Record<string, unknown> | null;
 }
 
 export interface EmployerApplication extends Application {
@@ -30,7 +31,7 @@ export interface EmployerApplication extends Application {
     id: string;
     firstName: string;
     lastName: string;
-    email: string;
+    email: string | null;
     role: "CANDIDATE";
   };
   vacancy: {
@@ -42,6 +43,8 @@ export interface EmployerApplication extends Application {
 
 export interface EmployerApplicationDetail extends EmployerApplication {
   vacancy: Vacancy;
+  resume: CandidateResumeSummary | null;
+  resumeSnapshot: Record<string, unknown> | null;
 }
 
 export interface ApplicationListResponse<T> {

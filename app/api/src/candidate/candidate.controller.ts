@@ -21,6 +21,7 @@ import { CreateCandidateEducationDto } from './dto/create-candidate-education.dt
 import { UpdateCandidateEducationDto } from './dto/update-candidate-education.dto.js';
 import { CreateCandidateCertificationDto } from './dto/create-candidate-certification.dto.js';
 import { UpdateCandidateCertificationDto } from './dto/update-candidate-certification.dto.js';
+import { UpdateCandidateProfileSectionsDto } from './dto/update-candidate-profile-sections.dto.js';
 
 @ApiTags('Candidate')
 @ApiBearerAuth()
@@ -42,6 +43,12 @@ export class CandidateController {
     @Body() dto: UpdateCandidateProfileDto,
   ) {
     return this.service.updateProfile(user.sub, dto);
+  }
+  @Patch('profile/sections') updateProfileSections(
+    @CurrentUser() user: { sub: string },
+    @Body() dto: UpdateCandidateProfileSectionsDto,
+  ) {
+    return this.service.updateProfileSections(user.sub, dto);
   }
   @Get('experience') listExperience(@CurrentUser() user: { sub: string }) {
     return this.service.listExperiences(user.sub);

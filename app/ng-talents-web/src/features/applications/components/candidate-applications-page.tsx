@@ -204,7 +204,11 @@ function CandidateApplicationCard({
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
         <span>Отклик отправлен {formatPublishedDate(application.appliedAt) ?? "—"}</span>
         <span>Обновлён {formatPublishedDate(application.updatedAt) ?? "—"}</span>
-        {application.resume ? <span>Резюме: {application.resume.title}</span> : null}
+        {application.resume ? (
+          <span>
+            Профессия: {application.resume.desiredPosition || "Не указана"}
+          </span>
+        ) : null}
       </div>
       {application.coverLetter ? (
         <p className="mt-4 line-clamp-3 whitespace-pre-wrap text-sm">

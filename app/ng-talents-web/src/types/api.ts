@@ -206,15 +206,18 @@ export interface Application {
   viewedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  resumeSnapshot?: Record<string, unknown> | null;
 }
 
 export interface CandidateResumeSummary {
   id: string;
   title: string;
+  desiredPosition?: string | null;
   originalName: string;
   mimeType: string;
   sizeBytes: number;
   isPrimary: boolean;
+  status?: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   createdAt: string;
   updatedAt: string;
 }

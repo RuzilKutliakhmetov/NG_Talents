@@ -38,6 +38,22 @@ enum WorkFormat {
   REMOTE
 }
 
+enum ResumeStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum LanguageLevel {
+  A1
+  A2
+  B1
+  B2
+  C1
+  C2
+  NATIVE
+}
+
 enum VacancyRegion {
   BASHKORTOSTAN
   KHMAO
@@ -133,6 +149,7 @@ enum CandidateCertificationType {
   B1_1
   ELECTRICAL_SAFETY
   NAKS
+  COURSE
   OTHER
 }
 
@@ -278,8 +295,7 @@ model CandidateProfile {
 
   desiredPosition String?
 
-  desiredSalaryMin Int?
-  desiredSalaryMax Int?
+  specialization String?
 
   readyForShift     Boolean @default(false)
   readyForShiftWork Boolean @default(false)
@@ -291,6 +307,20 @@ model CandidateProfile {
   experienceYears Int?
 
   education String?
+
+  employmentType EmploymentType?
+
+  workFormat WorkFormat?
+
+  preferredSchedule String?
+
+  readyToRelocate Boolean @default(false)
+
+  readyForTrips Boolean @default(false)
+
+  showContacts Boolean @default(true)
+
+  hideFromEmployers Boolean @default(false)
 
   isPublic Boolean @default(true)
 
@@ -306,6 +336,8 @@ model CandidateProfile {
   experiences    CandidateExperience[]
   educations     CandidateEducation[]
   certifications CandidateCertification[]
+  languages      CandidateProfileLanguage[]
+  portfolioLinks CandidateProfilePortfolioLink[]
 
   @@index([city])
   @@index([region])
@@ -432,11 +464,15 @@ model CandidateExperience {
   endDate            DateTime?
   isCurrent          Boolean          @default(false)
   description        String?
+  achievements       String?
+  technologies       String[]
+  sortOrder          Int              @default(0)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   candidateProfile   CandidateProfile @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
 
   @@index([candidateProfileId])
+  @@index([candidateProfileId, sortOrder])
   @@map("candidate_experiences")
 }
 
@@ -446,14 +482,18 @@ model CandidateEducation {
   institution        String
   specialization     String
   degree             String?
-  startYear          Int?
-  endYear            Int?
+  startDate          DateTime?
+  endDate            DateTime?
   description        String?
+  faculty            String?
+  isIncomplete       Boolean          @default(false)
+  sortOrder          Int              @default(0)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   candidateProfile   CandidateProfile @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
 
   @@index([candidateProfileId])
+  @@index([candidateProfileId, sortOrder])
   @@map("candidate_educations")
 }
 
@@ -474,6 +514,35 @@ model CandidateCertification {
   @@index([type])
   @@index([expiresAt])
   @@map("candidate_certifications")
+}
+
+model CandidateProfileLanguage {
+  id                 String        @id @default(uuid())
+  candidateProfileId String
+  name               String
+  level              LanguageLevel
+  sortOrder          Int           @default(0)
+
+  candidateProfile CandidateProfile @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateProfileId, name])
+  @@index([candidateProfileId, sortOrder])
+  @@map("candidate_profile_languages")
+}
+
+model CandidateProfilePortfolioLink {
+  id                 String   @id @default(uuid())
+  candidateProfileId String
+  title              String
+  description        String?
+  url                String
+  technologies       String[] @default([])
+  sortOrder          Int      @default(0)
+
+  candidateProfile CandidateProfile @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+
+  @@index([candidateProfileId, sortOrder])
+  @@map("candidate_profile_portfolio_links")
 }
 
 // ============================================================
@@ -642,6 +711,8 @@ model Application {
   resumeId String?
   resume   Resume? @relation(fields: [resumeId], references: [id], onDelete: SetNull)
 
+  resumeSnapshot Json?
+
   status ApplicationStatus @default(NEW)
 
   coverLetter String?
@@ -747,15 +818,43 @@ model Resume {
 
   title String
 
-  storageKey String
+  storageKey String?
 
-  originalName String
+  originalName String?
 
-  mimeType String
+  mimeType String?
 
-  sizeBytes Int
+  sizeBytes Int?
 
   isPrimary Boolean @default(false)
+
+  status ResumeStatus @default(DRAFT)
+
+  desiredPosition String?
+
+  specialization String?
+
+  summary String?
+
+  experienceYears Int?
+
+  desiredSalaryMin Int?
+
+  desiredSalaryMax Int?
+
+  salaryCurrency String @default("RUB")
+
+  employmentType EmploymentType?
+
+  workSchedule String?
+
+  workFormat WorkFormat?
+
+  city String?
+
+  geoPreferences Json?
+
+  isPublic Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -766,10 +865,121 @@ model Resume {
 
   applications Application[]
 
+  experiences    ResumeExperience[]
+  educations     ResumeEducation[]
+  skills         ResumeSkill[]
+  languages      ResumeLanguage[]
+  certifications ResumeCertification[]
+  portfolioLinks ResumePortfolioLink[]
+
   @@index([userId])
   @@index([candidateProfileId])
   @@index([isPrimary])
+  @@index([status])
+  @@index([isPublic])
   @@map("resumes")
+}
+
+model ResumeExperience {
+  id           String    @id @default(uuid())
+  resumeId     String
+  companyName  String
+  position     String
+  startDate    DateTime
+  endDate      DateTime?
+  isCurrent    Boolean   @default(false)
+  description  String?
+  achievements String?
+  technologies String[]  @default([])
+  sortOrder    Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId, sortOrder])
+  @@map("resume_experiences")
+}
+
+model ResumeEducation {
+  id             String    @id @default(uuid())
+  resumeId       String
+  institution    String
+  faculty        String?
+  specialization String
+  degree         String?
+  startDate      DateTime?
+  endDate        DateTime?
+  isIncomplete   Boolean   @default(false)
+  description    String?
+  sortOrder      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId, sortOrder])
+  @@map("resume_educations")
+}
+
+model ResumeSkill {
+  id        String  @id @default(uuid())
+  resumeId  String
+  name      String
+  category  String?
+  level     String?
+  sortOrder Int     @default(0)
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@unique([resumeId, name])
+  @@index([resumeId, sortOrder])
+  @@map("resume_skills")
+}
+
+model ResumeLanguage {
+  id        String        @id @default(uuid())
+  resumeId  String
+  name      String
+  level     LanguageLevel
+  sortOrder Int           @default(0)
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@unique([resumeId, name])
+  @@index([resumeId, sortOrder])
+  @@map("resume_languages")
+}
+
+model ResumeCertification {
+  id        String    @id @default(uuid())
+  resumeId  String
+  name      String
+  issuer    String?
+  issuedAt  DateTime?
+  expiresAt DateTime?
+  url       String?
+  sortOrder Int       @default(0)
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId, sortOrder])
+  @@map("resume_certifications")
+}
+
+model ResumePortfolioLink {
+  id           String   @id @default(uuid())
+  resumeId     String
+  title        String
+  description  String?
+  url          String
+  technologies String[] @default([])
+  sortOrder    Int      @default(0)
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId, sortOrder])
+  @@map("resume_portfolio_links")
 }
 
 // ============================================================

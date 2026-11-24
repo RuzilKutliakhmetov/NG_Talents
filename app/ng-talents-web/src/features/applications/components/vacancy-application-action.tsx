@@ -143,9 +143,13 @@ export function VacancyApplicationAction({
               onChange={(event) => setResumeId(event.target.value)}
             >
               <option value="">Не прикреплять резюме</option>
-              {resumesQuery.data.map((resume) => (
+              {resumesQuery.data
+                .filter((resume) =>
+                  resume.status === undefined || resume.status === "PUBLISHED",
+                )
+                .map((resume) => (
                 <option key={resume.id} value={resume.id}>
-                  {resume.title}
+                  {resume.desiredPosition || "Профессия не указана"}
                   {resume.isPrimary ? " · основное" : ""}
                 </option>
               ))}

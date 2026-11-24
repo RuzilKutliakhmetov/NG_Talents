@@ -115,7 +115,30 @@ describe('ApplicationService', () => {
         }),
       },
       resume: {
-        findFirst: vi.fn().mockResolvedValue({ id: 'resume-1' }),
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'resume-1',
+          title: 'Backend resume',
+          status: 'PUBLISHED',
+          desiredPosition: 'Backend',
+          specialization: null,
+          summary: null,
+          experienceYears: null,
+          desiredSalaryMin: null,
+          desiredSalaryMax: null,
+          salaryCurrency: 'RUB',
+          employmentType: null,
+          workSchedule: null,
+          workFormat: null,
+          city: null,
+          geoPreferences: null,
+          isPublic: true,
+          experiences: [],
+          educations: [],
+          skills: [],
+          languages: [],
+          certifications: [],
+          portfolioLinks: [],
+        }),
       },
       application: { findFirst: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (cb: (client: typeof tx) => unknown) => cb(tx)),
@@ -130,18 +153,71 @@ describe('ApplicationService', () => {
       resumeId: 'resume-1',
     });
 
-    expect(prisma.resume.findFirst).toHaveBeenCalledWith({
-      where: {
-        id: 'resume-1',
-        userId: 'user-1',
-        candidateProfile: { userId: 'user-1' },
-      },
-      select: { id: true },
-    });
+    expect(prisma.resume.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'resume-1',
+          userId: 'user-1',
+          candidateProfile: { userId: 'user-1' },
+        },
+      }),
+    );
     expect(tx.application.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ resumeId: 'resume-1' }),
+      data: expect.objectContaining({
+        resumeId: 'resume-1',
+        resumeSnapshot: expect.objectContaining({
+          resumeId: 'resume-1',
+          desiredSalary: null,
+        }),
+      }),
     });
   });
+
+  it.each(['DRAFT', 'ARCHIVED'])(
+    'rejects a %s resume at application time',
+    async (status) => {
+      const prisma = {
+        user: {
+          findUnique: vi
+            .fn()
+            .mockResolvedValue({ id: 'user-1', role: UserRole.CANDIDATE }),
+        },
+        vacancy: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'vacancy-1',
+            status: VacancyStatus.PUBLISHED,
+          }),
+        },
+        resume: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: 'resume-1',
+            title: 'Resume',
+            status,
+            experiences: [],
+            educations: [],
+            skills: [],
+            languages: [],
+            certifications: [],
+            portfolioLinks: [],
+          }),
+        },
+        application: { findFirst: vi.fn().mockResolvedValue(null) },
+      };
+      const service = new ApplicationService(
+        prisma as never,
+        notificationsMock(),
+      );
+
+      await expect(
+        service.createApplication('user-1', UserRole.CANDIDATE, {
+          vacancyId: 'vacancy-1',
+          resumeId: 'resume-1',
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'RESUME_NOT_PUBLISHED' },
+      });
+    },
+  );
 
   it('rejects an application with another candidate resume', async () => {
     const prisma = {
@@ -304,5 +380,54 @@ describe('ApplicationService', () => {
         'app-1',
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('loads employer application details without including the scalar resume snapshot', async () => {
+    const application = {
+      id: 'app-1',
+      vacancy: { employerId: 'employer-1' },
+      candidate: {
+        id: 'candidate-1',
+        firstName: 'Candidate',
+        lastName: 'One',
+        email: 'candidate@example.test',
+        candidateProfile: {
+          isPublic: true,
+          hideFromEmployers: false,
+          showContacts: true,
+        },
+      },
+      resumeSnapshot: { desiredPosition: 'Engineer' },
+    };
+    const prisma = {
+      employerMember: {
+        findUnique: vi.fn().mockResolvedValue({
+          employerId: 'employer-1',
+          userId: 'user-1',
+          memberRole: 'OWNER',
+        }),
+      },
+      application: {
+        findUnique: vi.fn().mockResolvedValue(application),
+      },
+    };
+    const service = new ApplicationService(
+      prisma as never,
+      notificationsMock(),
+    );
+
+    await expect(
+      service.getEmployerApplication(
+        'user-1',
+        UserRole.EMPLOYER,
+        'employer-1',
+        'app-1',
+      ),
+    ).resolves.toMatchObject({
+      resumeSnapshot: { desiredPosition: 'Engineer' },
+    });
+
+    const query = prisma.application.findUnique.mock.calls[0][0];
+    expect(query.include).not.toHaveProperty('resumeSnapshot');
   });
 });

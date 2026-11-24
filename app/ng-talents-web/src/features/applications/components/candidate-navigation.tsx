@@ -15,6 +15,8 @@ import { cn } from "cn";
 
 const links = [
   { href: "/candidate", label: "Обзор", exact: true },
+  { href: "/candidate/profile", label: "Профиль", exact: false },
+  { href: "/candidate/resumes", label: "Мои резюме", exact: false },
   { href: "/candidate/applications", label: "Мои отклики", exact: false },
 ];
 
